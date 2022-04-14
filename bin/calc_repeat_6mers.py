@@ -8,7 +8,7 @@ import pandas as pd
 from pqdm.threads import pqdm
 from tqdm.auto import tqdm
 
-from iupred3.iupred3_lib import read_seq
+from utils.extend_aa_scores import get_sequence_from_file
 
 data_dir = '/tmp/global2/vikram/felix/master_thesis/data'
 af_data_dir = f'{data_dir}/alphafold/v2'
@@ -33,14 +33,6 @@ for kmer in most_freq_kmers:
         non_repeats.append(kmer)
 
 
-def get_sequence_from_file(uniprot_id: str):
-    try:
-        return read_seq(f'{af_data_dir}/sequences/{uniprot_id}.fasta')
-    except Exception as e:
-        print(f'Failed reading fasta file {uniprot_id}: {e.message if hasattr(e, "message") else e}')
-    return None
-
-
 def count_6mers_counter(seq: str, k=6):
     counter = Counter()
     n_kmers = len(seq) - k + 1
@@ -51,7 +43,7 @@ def count_6mers_counter(seq: str, k=6):
 
 
 def load_6mer_counts(uniprot_id: str):
-    seq = get_sequence_from_file(uniprot_id)
+    seq = get_sequence_from_file(f"{af_data_dir}/sequences", uniprot_id)
     if seq is None:
         return None, None
     try:
