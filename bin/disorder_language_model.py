@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.data import DataLoader, RandomSampler, Dataset
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence, pad_sequence
 
@@ -28,11 +27,6 @@ import re
 from datetime import datetime
 import logging as log
 import glob
-
-# Select the model
-# model_name = "Rostlab/prot_t5_xl_half_uniref50-enc"  # only encoder part, half-precision
-# model_name = "Rostlab/prot_t5_xl_uniref50"
-model_name = "Rostlab/prot_bert_bfd"
 
 # Silence the warnings about transformers not loading correctly (i.e. decoder missing)
 logging.set_verbosity_error()
@@ -158,7 +152,7 @@ class ProtTransDisorderPredictor(LightningModule):
         # https://pytorch-lightning.readthedocs.io/en/stable/common/hyperparameters.html#lightningmodule-hyperparameters
         self.save_hyperparameters(params)
 
-        self.model_name = model_name
+        self.model_name = self.hparams.model_name
 
         self._loss = nn.CrossEntropyLoss()
 
@@ -458,6 +452,12 @@ class ProtTransDisorderPredictor(LightningModule):
             - updated parser
         """
         parser = parent_parser.add_argument_group("ProtTransDisorderPredictor")
+        parser.add_argument(
+            "--model_name",
+            default="Rostlab/prot_bert_bfd",
+            type=str,
+            help="ProtTrans language model to use as embedding encoder",
+        )
         parser.add_argument(
             "--max_length",
             default=1536,
