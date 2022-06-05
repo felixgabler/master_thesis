@@ -36,32 +36,28 @@ class ProtTransDisorderPredictor(LightningModule):
         # https://pytorch-lightning.readthedocs.io/en/stable/common/hyperparameters.html#lightningmodule-hyperparameters
         self.save_hyperparameters(params)
 
-        self.model_name = self.hparams.model_name
-
-        self._loss = nn.CrossEntropyLoss()
-
         num_classes = len(self.hparams.label_set.split(","))
         self.metric_acc = Accuracy(num_classes=num_classes, ignore_index=-100)
         # self.metric_f1 = F1Score(num_classes=num_classes, mdmc_average='global', ignore_index=-100)
         # self.metric_mcc = MatthewsCorrCoef(num_classes=num_classes)
 
-        # build model
         self.__build_model()
 
     def __build_model(self) -> None:
+        model_name = self.hparams.model_name
         """ Init BERT model + tokenizer + classification head."""
-        if "t5" in self.model_name:
-            self.tokenizer = T5Tokenizer.from_pretrained(self.model_name, do_lower_case=False)
-            self.LM = T5EncoderModel.from_pretrained(self.model_name)
-        elif "albert" in self.model_name:
-            self.tokenizer = AlbertTokenizer.from_pretrained(self.model_name, do_lower_case=False)
-            self.LM = AlbertModel.from_pretrained(self.model_name)
-        elif "bert" in self.model_name:
-            self.tokenizer = BertTokenizer.from_pretrained(self.model_name, do_lower_case=False)
-            self.LM = BertModel.from_pretrained(self.model_name)
-        elif "xlnet" in self.model_name:
-            self.tokenizer = XLNetTokenizer.from_pretrained(self.model_name, do_lower_case=False)
-            self.LM = XLNetModel.from_pretrained(self.model_name)
+        if "t5" in model_name:
+            self.tokenizer = T5Tokenizer.from_pretrained(model_name, do_lower_case=False)
+            self.LM = T5EncoderModel.from_pretrained(model_name)
+        elif "albert" in model_name:
+            self.tokenizer = AlbertTokenizer.from_pretrained(model_name, do_lower_case=False)
+            self.LM = AlbertModel.from_pretrained(model_name)
+        elif "bert" in model_name:
+            self.tokenizer = BertTokenizer.from_pretrained(model_name, do_lower_case=False)
+            self.LM = BertModel.from_pretrained(model_name)
+        elif "xlnet" in model_name:
+            self.tokenizer = XLNetTokenizer.from_pretrained(model_name, do_lower_case=False)
+            self.LM = XLNetModel.from_pretrained(model_name)
         else:
             print("Unkown model name")
 
@@ -81,7 +77,7 @@ class ProtTransDisorderPredictor(LightningModule):
         RNN = nn.LSTM if self.hparams.rnn == 'lstm' else nn.GRU
         # https://pytorch.org/tutorials/beginner/nlp/sequence_models_tutorial.html
         # https://www.dotlayer.org/en/training-rnn-using-pytorch/
-        self.rnn = RNN(
+        self.lstm = RNN(
             input_size=self.LM.config.hidden_size,
             hidden_size=hidden_features,
             num_layers=self.hparams.rnn_layers,
@@ -107,92 +103,6 @@ class ProtTransDisorderPredictor(LightningModule):
                 hidden_features,
                 self.label_encoder.vocab_size
             )
-
-    def unfreeze_encoder(self) -> None:
-        """ un-freezes the encoder layer. """
-        if self._frozen:
-            log.info(f"\n-- Encoder model fine-tuning")
-            for param in self.LM.parameters():
-                param.requires_grad = True
-            self._frozen = False
-
-    def freeze_encoder(self) -> None:
-        """ freezes the encoder layer. """
-        for param in self.LM.parameters():
-            param.requires_grad = False
-        self._frozen = True
-
-    def predict(self, sample: dict) -> dict:
-        """ Predict function.
-        :param sample: dictionary with the text we want to classify.
-        Returns:
-            Dictionary with the input text and the predicted label.
-        """
-        if self.training:
-            self.eval()
-
-        with torch.no_grad():
-            model_input, _ = self.prepare_sample([sample], prepare_target=False)
-            model_out = self.forward(**model_input)
-            predicted_labels = [
-                self.label_encoder.index_to_token[prediction]
-                for prediction in model_out
-            ]
-            sample["predicted_label"] = predicted_labels[0]
-
-        return sample
-
-    def __build_features(self, input_ids, attention_mask, length):
-        """
-        All inputs will already be tensors on the right device thanks to BatchEncoding.to(device)
-        https://github.com/jidasheng/bi-lstm-crf/blob/master/bi_lstm_crf/model/model.py
-        :param input_ids:
-        :param attention_mask:
-        :param length:
-        :return:
-        """
-        padded_word_embeddings = self.LM(input_ids, attention_mask)[0]
-
-        # We pack the padded sequence to improve the computational speed during training
-        # https://github.com/pytorch/pytorch/issues/43227
-        pack_padded_sequences_vectors = pack_padded_sequence(padded_word_embeddings, length.cpu(),
-                                                             batch_first=True,
-                                                             # not that relevant for batch size 1
-                                                             enforce_sorted=False)
-
-        lstm_out, _ = self.rnn(pack_padded_sequences_vectors)
-        x, _ = pad_packed_sequence(lstm_out, batch_first=True, total_length=self.hparams.max_length)
-
-        if not self.hparams.crf_after_rnn:
-            x = self.hidden1(x)
-            x = self.relu(x)
-            x = self.dropout(x)
-
-        return x, attention_mask
-
-    def forward(self, input_ids, attention_mask, length, token_type_ids=None):
-        """ Usual pytorch forward function.
-        input ids is already padded
-        Returns:
-            model outputs
-        """
-        # Get the emission scores from the BiLSTM
-        x, attention_mask = self.__build_features(input_ids, attention_mask, length)
-        scores, tag_seq = self.crf(x, attention_mask)
-        tag_seq = torch.tensor(tag_seq, device=self.device)
-        return scores, tag_seq
-
-    def loss(self, xs: torch.tensor, attention_mask, length, targets: torch.tensor) -> torch.tensor:
-        """
-        Computes Loss value according to a loss function.
-        :param xs: a tensor [batch_size x 1] with data input
-        :param targets: Label values [batch_size]
-        Returns:
-            torch.tensor with loss value.
-        """
-        features, masks = self.__build_features(xs, attention_mask, length)
-        loss = self.crf.loss(features, targets, masks=masks)
-        return loss
 
     def prepare_sample(self, sample: list, prepare_target: bool = True) -> (dict, dict):
         """
@@ -230,6 +140,60 @@ class ProtTransDisorderPredictor(LightningModule):
             print(label)
             raise Exception("Label encoder found an unknown label.")
 
+    def __build_features(self, input_ids, attention_mask, length):
+        """
+        All inputs will already be tensors on the right device thanks to BatchEncoding.to(device)
+        https://github.com/jidasheng/bi-lstm-crf/blob/master/bi_lstm_crf/model/model.py
+        :param input_ids:
+        :param attention_mask:
+        :param length:
+        :return:
+        """
+        padded_word_embeddings = self.LM(input_ids, attention_mask)[0]
+
+        # We pack the padded sequence to improve the computational speed during training
+        # https://github.com/pytorch/pytorch/issues/43227
+        pack_padded_sequences_vectors = pack_padded_sequence(padded_word_embeddings, length.cpu(),
+                                                             batch_first=True,
+                                                             # not that relevant for batch size 1
+                                                             enforce_sorted=False)
+
+        lstm_out, _ = self.lstm(pack_padded_sequences_vectors)
+        x, _ = pad_packed_sequence(lstm_out, batch_first=True, total_length=self.hparams.max_length)
+
+        if not self.hparams.crf_after_rnn:
+            x = self.hidden1(x)
+            x = self.relu(x)
+            x = self.dropout(x)
+
+        return x, attention_mask
+
+    def forward(self, input_ids, attention_mask, length, token_type_ids=None):
+        """ Usual pytorch forward function.
+        input ids is already padded
+        Returns:
+            model outputs
+        """
+        # Get the emission scores from the BiLSTM
+        x, attention_mask = self.__build_features(input_ids, attention_mask, length)
+        _, tag_seq = self.crf(x, attention_mask)  # ignore the scores
+        tag_seq = torch.tensor(tag_seq, device=self.device)
+        return tag_seq
+
+    def loss(self, xs: torch.tensor, attention_mask, length, targets: torch.tensor) -> torch.tensor:
+        """
+        Computes Loss value according to a loss function.
+        :param xs: a tensor [batch_size x max_length] with data input
+        :param attention_mask: Attention mask [batch_size x max_length]
+        :param length: length of the sequences in this batch [batch_size]
+        :param targets: Label values [batch_size]
+        Returns:
+            torch.tensor with loss value.
+        """
+        features, masks = self.__build_features(xs, attention_mask, length)
+        loss = self.crf.loss(features, targets, masks=masks)
+        return loss
+
     def training_step(self, batch: tuple, batch_nb: int, *args, **kwargs) -> dict:
         """
         Runs one training step. This usually consists in the forward function followed
@@ -244,7 +208,7 @@ class ProtTransDisorderPredictor(LightningModule):
         inputs = inputs.to(self.device)
         padded_targets = padded_targets.to(self.device)
 
-        # model_out, seqs = self.forward(**inputs)
+        # seqs = self.forward(**inputs)
         loss = self.loss(inputs['input_ids'], inputs['attention_mask'], inputs['length'], padded_targets)
         return {'loss': loss}
 
@@ -258,7 +222,7 @@ class ProtTransDisorderPredictor(LightningModule):
         y = y.to(self.device)
         padded_y = padded_y.to(self.device)
 
-        model_out, y_hat = self.forward(**inputs)
+        y_hat = self.forward(**inputs)
         # y_hat = torch.argmax(model_out, dim=1)
         loss = self.loss(inputs['input_ids'], inputs['attention_mask'], inputs['length'], padded_y)
 
@@ -276,7 +240,7 @@ class ProtTransDisorderPredictor(LightningModule):
         inputs = inputs.to(self.device)
         y = y.to(self.device)
 
-        model_out, y_hat = self.forward(**inputs)
+        y_hat = self.forward(**inputs)
         # y_hat = torch.argmax(model_out, dim=1)
         loss = self.loss(inputs['input_ids'], inputs['attention_mask'], inputs['length'], padded_y)
 
@@ -288,15 +252,14 @@ class ProtTransDisorderPredictor(LightningModule):
     def predict_step(self, batch, batch_idx: int, *args, **kwargs):
         inputs, y, padded_y = batch
         inputs = inputs.to(self.device)
-
-        model_out, y_hat = self.forward(**inputs)
-        return y_hat  # torch.argmax(model_out, dim=1)
+        return self.forward(**inputs)
+        # torch.argmax(model_out, dim=1)
 
     def configure_optimizers(self):
         """ Sets different Learning rates for different parameter groups. """
         parameters = [
             {"params": self.crf.parameters()},
-            {"params": self.rnn.parameters()},
+            {"params": self.lstm.parameters()},
             {
                 "params": self.LM.parameters(),
                 "lr": self.hparams.encoder_learning_rate,
@@ -319,6 +282,20 @@ class ProtTransDisorderPredictor(LightningModule):
         """ Pytorch lightning hook """
         if self.current_epoch + 1 >= self.hparams.nr_frozen_epochs:
             self.unfreeze_encoder()
+
+    def unfreeze_encoder(self) -> None:
+        """ un-freezes the encoder layer. """
+        if self._frozen:
+            log.info(f"\n-- Encoder model fine-tuning")
+            for param in self.LM.parameters():
+                param.requires_grad = True
+            self._frozen = False
+
+    def freeze_encoder(self) -> None:
+        """ freezes the encoder layer. """
+        for param in self.LM.parameters():
+            param.requires_grad = False
+        self._frozen = True
 
     def train_dataloader(self) -> DataLoader:
         """ Function that loads the train set. """
@@ -346,6 +323,16 @@ class ProtTransDisorderPredictor(LightningModule):
         test_dataset = load_dataset(self.hparams.test_file, self.hparams.max_length)
         return DataLoader(
             dataset=test_dataset,
+            batch_size=self.hparams.batch_size,
+            collate_fn=self.prepare_sample,
+            num_workers=self.hparams.loader_workers,
+        )
+
+    def predict_dataloader(self) -> DataLoader:
+        """ Function that loads the prediction set. """
+        predict_dataset = load_dataset(self.hparams.predict_file, self.hparams.max_length)
+        return DataLoader(
+            dataset=predict_dataset,
             batch_size=self.hparams.batch_size,
             collate_fn=self.prepare_sample,
             num_workers=self.hparams.loader_workers,
@@ -444,6 +431,12 @@ class ProtTransDisorderPredictor(LightningModule):
             default="../data/disprot/flDPnn_Test_Annotation.txt",
             type=str,
             help="Path to the file containing the test data.",
+        )
+        parser.add_argument(
+            "--predict_file",
+            default="../data/disprot/flDPnn_Validation_Annotation.txt",
+            type=str,
+            help="Path to the file containing the prediction data.",
         )
         parser.add_argument(
             "--loader_workers",
