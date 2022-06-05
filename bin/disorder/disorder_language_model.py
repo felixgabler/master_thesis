@@ -76,30 +76,37 @@ class ProtTransDisorderPredictor(LightningModule):
         # Label Encoder
         self.label_encoder = LabelEncoder(self.hparams.label_set.split(","), reserved_labels=[], unknown_index=None)
 
-        self.hidden_features = 1024
+        hidden_features = self.hparams.hidden_features
+
+        RNN = nn.LSTM if self.hparams.rnn == 'lstm' else nn.GRU
         # https://pytorch.org/tutorials/beginner/nlp/sequence_models_tutorial.html
         # https://www.dotlayer.org/en/training-rnn-using-pytorch/
-        self.lstm = nn.LSTM(
+        self.rnn = RNN(
             input_size=self.LM.config.hidden_size,
-            hidden_size=self.hidden_features,
-            num_layers=2,
-            bidirectional=self.hparams.bidirectional_lstm,
+            hidden_size=hidden_features,
+            num_layers=self.hparams.rnn_layers,
+            bidirectional=self.hparams.bidirectional_rnn,
             batch_first=True,
         )
 
-        self.hidden1 = nn.Linear(
-            2 * self.hidden_features if self.hparams.bidirectional_lstm else self.hidden_features,
-            self.hidden_features
-        )
+        rnn_out = 2 * hidden_features if self.hparams.bidirectional_rnn else hidden_features
 
-        self.relu = nn.ReLU()
+        if self.hparams.crf_after_rnn:
+            self.crf = CRF(
+                rnn_out,
+                self.label_encoder.vocab_size
+            )
+        else:
+            self.hidden1 = nn.Linear(rnn_out, hidden_features)
 
-        self.dropout = nn.Dropout(p=0.3)
+            self.relu = nn.ReLU()
 
-        self.crf = CRF(
-            self.hidden_features,
-            self.label_encoder.vocab_size
-        )
+            self.dropout = nn.Dropout(p=0.3)
+
+            self.crf = CRF(
+                hidden_features,
+                self.label_encoder.vocab_size
+            )
 
     def unfreeze_encoder(self) -> None:
         """ un-freezes the encoder layer. """
@@ -153,12 +160,13 @@ class ProtTransDisorderPredictor(LightningModule):
                                                              # not that relevant for batch size 1
                                                              enforce_sorted=False)
 
-        lstm_out, _ = self.lstm(pack_padded_sequences_vectors)
-        lstm_out, _ = pad_packed_sequence(lstm_out, batch_first=True, total_length=self.hparams.max_length)
+        lstm_out, _ = self.rnn(pack_padded_sequences_vectors)
+        x, _ = pad_packed_sequence(lstm_out, batch_first=True, total_length=self.hparams.max_length)
 
-        x = self.hidden1(lstm_out)
-        x = self.relu(x)
-        x = self.dropout(x)
+        if not self.hparams.crf_after_rnn:
+            x = self.hidden1(x)
+            x = self.relu(x)
+            x = self.dropout(x)
 
         return x, attention_mask
 
@@ -288,15 +296,18 @@ class ProtTransDisorderPredictor(LightningModule):
         """ Sets different Learning rates for different parameter groups. """
         parameters = [
             {"params": self.crf.parameters()},
-            {"params": self.dropout.parameters()},
-            {"params": self.relu.parameters()},
-            {"params": self.hidden1.parameters()},
-            {"params": self.lstm.parameters()},
+            {"params": self.rnn.parameters()},
             {
                 "params": self.LM.parameters(),
                 "lr": self.hparams.encoder_learning_rate,
             },
         ]
+        if not self.hparams.crf_after_rnn:
+            parameters = parameters + [
+                {"params": self.dropout.parameters()},
+                {"params": self.relu.parameters()},
+                {"params": self.hidden1.parameters()},
+            ]
         if self.hparams.strategy.endswith('_offload'):
             return DeepSpeedCPUAdam(parameters, lr=self.hparams.learning_rate)
         elif self.hparams.strategy == 'deepspeed_stage_3':
@@ -355,10 +366,35 @@ class ProtTransDisorderPredictor(LightningModule):
             help="ProtTrans language model to use as embedding encoder",
         )
         parser.add_argument(
-            "--max_length",
-            default=1536,
+            "--rnn",
+            default="lstm",
+            type=str,
+            help="Type of RNN architecture to use",
+            choices=['lstm', 'gru']
+        )
+        parser.add_argument(
+            "--rnn_layers",
+            default=2,
             type=int,
-            help="Maximum sequence length.",
+            help="Number of layers for the rnn.",
+        )
+        parser.add_argument(
+            "--bidirectional_rnn",
+            default=True,
+            type=bool,
+            help="Enable bidirectional RNN in the encoder.",
+        )
+        parser.add_argument(
+            "--crf_after_rnn",
+            default=False,
+            type=bool,
+            help="Whether to directly feed the RNN output into the CRF or to add linear net and dropout.",
+        )
+        parser.add_argument(
+            "--hidden_features",
+            default=1024,
+            type=int,
+            help="Number of neurons in the hidden linear net.",
         )
         parser.add_argument(
             "--encoder_learning_rate",
@@ -379,6 +415,12 @@ class ProtTransDisorderPredictor(LightningModule):
             help="Number of epochs we want to keep the encoder model frozen.",
         )
         # Data Args:
+        parser.add_argument(
+            "--max_length",
+            default=1536,
+            type=int,
+            help="Maximum sequence length.",
+        )
         parser.add_argument(
             "--label_set",
             default="0,1",
@@ -416,11 +458,5 @@ class ProtTransDisorderPredictor(LightningModule):
             type=bool,
             help="Enable or disable gradient checkpointing which use the cpu memory \
                 with the gpu memory to store the model.",
-        )
-        parser.add_argument(
-            "--bidirectional_lstm",
-            default=True,
-            type=bool,
-            help="Enable bidirectional LSTM in the decoder.",
         )
         return parent_parser
