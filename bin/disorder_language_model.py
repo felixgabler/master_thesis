@@ -322,7 +322,7 @@ class ProtTransDisorderPredictor(LightningModule):
                                 return_length=True,
                                 truncation=True,
                                 return_tensors='pt',
-                                max_length=self.hparams.max_length).to(self.device)
+                                max_length=self.hparams.max_length)
 
         if not prepare_target:
             return inputs, {}
@@ -330,7 +330,7 @@ class ProtTransDisorderPredictor(LightningModule):
         # Prepare target:
         try:
             labels = [self.label_encoder.batch_encode(l) for l in label]
-            unpadded = torch.cat(labels).to(self.device).unsqueeze(0)
+            unpadded = torch.cat(labels).unsqueeze(0)
             labels.append(torch.empty(self.hparams.max_length))
             padded_sequences_labels = pad_sequence(labels, batch_first=True)
             return inputs, unpadded, padded_sequences_labels[:-1]
@@ -349,6 +349,9 @@ class ProtTransDisorderPredictor(LightningModule):
             - dictionary containing the loss and the metrics to be added to the lightning logger.
         """
         inputs, targets, padded_targets = batch
+        inputs = inputs.to(self.device)
+        padded_targets = padded_targets.to(self.device)
+
         # model_out, seqs = self.forward(**inputs)
         loss = self.loss(inputs['input_ids'], inputs['attention_mask'], inputs['length'], padded_targets)
         return {'loss': loss}
@@ -359,6 +362,10 @@ class ProtTransDisorderPredictor(LightningModule):
             - dictionary passed to the validation_end function.
         """
         inputs, y, padded_y = batch
+        inputs = inputs.to(self.device)
+        y = y.to(self.device)
+        padded_y = padded_y.to(self.device)
+
         model_out, y_hat = self.forward(**inputs)
         # y_hat = torch.argmax(model_out, dim=1)
         loss = self.loss(inputs['input_ids'], inputs['attention_mask'], inputs['length'], padded_y)
@@ -374,6 +381,9 @@ class ProtTransDisorderPredictor(LightningModule):
             - dictionary passed to the validation_end function.
         """
         inputs, y, padded_y = batch
+        inputs = inputs.to(self.device)
+        y = y.to(self.device)
+
         model_out, y_hat = self.forward(**inputs)
         # y_hat = torch.argmax(model_out, dim=1)
         loss = self.loss(inputs['input_ids'], inputs['attention_mask'], inputs['length'], padded_y)
@@ -385,6 +395,8 @@ class ProtTransDisorderPredictor(LightningModule):
 
     def predict_step(self, batch, batch_idx: int, *args, **kwargs):
         inputs, y, padded_y = batch
+        inputs = inputs.to(self.device)
+
         model_out, y_hat = self.forward(**inputs)
         return y_hat  # torch.argmax(model_out, dim=1)
 
