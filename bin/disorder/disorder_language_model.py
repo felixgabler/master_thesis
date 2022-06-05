@@ -1,18 +1,15 @@
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, RandomSampler, Dataset
+from torch.utils.data import DataLoader, RandomSampler
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence, pad_sequence
 
-from pytorch_lightning.loggers import TensorBoardLogger
-from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
-from pytorch_lightning import Trainer, LightningModule
+from pytorch_lightning import LightningModule
 from torchmetrics import Accuracy
 
 from transformers import T5EncoderModel, T5Tokenizer
 from transformers import BertModel, BertTokenizer
 from transformers import XLNetModel, XLNetTokenizer
 from transformers import AlbertModel, AlbertTokenizer
-from transformers import logging
 
 from torchnlp.encoders import LabelEncoder
 from torchnlp.utils import collate_tensors
@@ -22,122 +19,9 @@ from bi_lstm_crf import CRF
 from deepspeed.ops.adam import FusedAdam, DeepSpeedCPUAdam
 
 from argparse import ArgumentParser
-import os
-import re
-from datetime import datetime
 import logging as log
-import glob
 
-# Silence the warnings about transformers not loading correctly (i.e. decoder missing)
-logging.set_verbosity_error()
-
-
-class NLPDataset(Dataset):
-    """ A copy of torchnlp.datasets.dataset.Dataset where the equal check first checks whether the type is correct
-    """
-
-    def __init__(self, rows):
-        self.columns = set()
-        for row in rows:
-            if not isinstance(row, dict):
-                raise ValueError('Row must be a dict.')
-            self.columns.update(row.keys())
-        self.rows = rows
-
-    def __getitem__(self, key):
-        """
-        Get a column or row from the dataset.
-
-        Args:
-            key (str or int): String referencing a column or integer referencing a row
-        Returns:
-            :class:`list` or :class:`dict`: List of column values or a dict representing a row
-        """
-        # Given an column string return list of column values.
-        if isinstance(key, str):
-            if key not in self.columns:
-                raise AttributeError('Key not in columns.')
-            return [row[key] if key in row else None for row in self.rows]
-        # Given an row integer return a object of row values.
-        elif isinstance(key, (int, slice)):
-            return self.rows[key]
-        else:
-            raise TypeError('Invalid argument type.')
-
-    def __setitem__(self, key, item):
-        """
-        Set a column or row for a dataset.
-
-        Args:
-            key (str or int): String referencing a column or integer referencing a row
-            item (list or dict): Column or rows to set in the dataset.
-        """
-        if isinstance(key, str):
-            column = item
-            self.columns.add(key)
-            if len(column) > len(self.rows):
-                for i, value in enumerate(column):
-                    if i < len(self.rows):
-                        self.rows[i][key] = value
-                    else:
-                        self.rows.append({key: value})
-            else:
-                for i, row in enumerate(self.rows):
-                    if i < len(column):
-                        self.rows[i][key] = column[i]
-                    else:
-                        self.rows[i][key] = None
-        elif isinstance(key, slice):
-            rows = item
-            for row in rows:
-                if not isinstance(row, dict):
-                    raise ValueError('Row must be a dict.')
-                self.columns.update(row.keys())
-            self.rows[key] = rows
-        elif isinstance(key, int):
-            row = item
-            if not isinstance(row, dict):
-                raise ValueError('Row must be a dict.')
-            self.columns.update(row.keys())
-            self.rows[key] = row
-        else:
-            raise TypeError('Invalid argument type.')
-
-    def __len__(self):
-        return len(self.rows)
-
-    def __contains__(self, key):
-        return key in self.columns
-
-    def __str__(self):
-        return str(self.rows)
-
-    def __eq__(self, other):
-        # This line would fail in DDP because [other] was inspect._empty
-        return isinstance(other, NLPDataset) and self.columns == other.columns and self.rows == other.rows
-
-    def __add__(self, other):
-        return NLPDataset(self.rows + other.rows)
-
-
-def load_dataset(path, max_length=1536):
-    seqs = []
-    labels = []
-    with open(path) as file_handler:
-        i = -1
-        for line in file_handler:
-            i += 1
-            if i < 10 or len(line) > max_length:
-                continue
-            i_offset = i - 10
-            if i_offset % 7 == 1:
-                # Map rare amino acids
-                seqs.append(" ".join(list(re.sub(r"[UZOB]", "X", line.strip()))))
-            elif i_offset % 7 == 2:
-                labels.append(line.strip())
-
-    assert len(seqs) == len(labels)
-    return NLPDataset([{"seq": seqs[i], "label": labels[i]} for i in range(len(seqs))])
+from data_utils import load_dataset
 
 
 class ProtTransDisorderPredictor(LightningModule):
@@ -540,82 +424,3 @@ class ProtTransDisorderPredictor(LightningModule):
             help="Enable bidirectional LSTM in the decoder.",
         )
         return parent_parser
-
-
-parser = ArgumentParser()
-
-# Checkpointing and Early Stopping
-parser.add_argument("--monitor", default="val_acc", type=str, help="Quantity to monitor.")
-parser.add_argument(
-    "--metric_mode",
-    default="max",
-    type=str,
-    help="If we want to min/max the monitored quantity.",
-    choices=["min", "max"],
-)
-parser.add_argument(
-    "--patience",
-    default=5,
-    type=int,
-    help="Number of epochs with no improvement after which training will be stopped.",
-)
-parser.add_argument(
-    "--save_top_k",
-    default=1,
-    type=int,
-    help="The best k models according to the quantity monitored will be saved.",
-)
-
-# Batching
-parser.add_argument(
-    "--batch_size", default=1, type=int, help="Batch size to be used."
-)
-
-# add model specific args
-parser = ProtTransDisorderPredictor.add_model_specific_args(parser)
-# add all the available trainer options to argparse
-parser = Trainer.add_argparse_args(parser)
-
-args = parser.parse_args()
-
-model = ProtTransDisorderPredictor(args)
-
-logger = TensorBoardLogger(
-    save_dir="logs/",
-    version=datetime.now().strftime("%d-%m-%Y--%H-%M-%S"),
-)
-
-# Init model checkpoint path and saver
-ckpt_path = os.path.join(
-    logger.save_dir,
-    logger.name,
-    f"version_{logger.version}",
-    "checkpoints",
-)
-checkpoint_callback = ModelCheckpoint(
-    dirpath=ckpt_path,
-    filename="{epoch}-{val_loss:.2f}-{val_acc:.2f}-{val_f1:.2f}",
-    save_top_k=args.save_top_k,
-    monitor=args.monitor,
-    every_n_epochs=1,
-    mode=args.metric_mode,
-)
-
-early_stop_callback = EarlyStopping(
-    monitor=args.monitor,
-    min_delta=0.0,
-    patience=args.patience,
-    verbose=True,
-    mode=args.metric_mode,
-)
-
-trainer = Trainer.from_argparse_args(
-    args,
-    logger=logger,
-    callbacks=[checkpoint_callback, early_stop_callback],
-)
-
-trainer.fit(model)
-
-best_checkpoint_path = glob.glob(ckpt_path + "/*")[0]
-print(f"Best checkpoint: {best_checkpoint_path}")

@@ -8,6 +8,6 @@
 
 # Some models: "prot_t5_xl_half_uniref50-enc", "prot_t5_xl_uniref50", "prot_bert_bfd" (default)
 
-python disorder_language_model.py --model_name="Rostlab/prot_bert_bfd" --precision=16 \
+python disorder/train.py --model_name="Rostlab/prot_bert_bfd" --precision=16 \
        --accelerator="auto" --devices="auto" --strategy="dp" --max_epochs=100 --loader_workers=4 \
        &> out_bert_crf_dp_16
