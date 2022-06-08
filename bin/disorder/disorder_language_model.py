@@ -10,6 +10,7 @@ from transformers import T5EncoderModel, T5Tokenizer
 from transformers import BertModel, BertTokenizer
 from transformers import XLNetModel, XLNetTokenizer
 from transformers import AlbertModel, AlbertTokenizer
+from transformers import ESMModel, ESMTokenizer
 
 from torchnlp.encoders import LabelEncoder
 from torchnlp.utils import collate_tensors
@@ -24,7 +25,7 @@ import logging as log
 from data_utils import load_dataset
 
 
-class ProtTransDisorderPredictor(LightningModule):
+class DisorderPredictor(LightningModule):
     """
     ProtTrans model to predict intrinsic disorder in sequences.
 
@@ -58,10 +59,13 @@ class ProtTransDisorderPredictor(LightningModule):
         elif "xlnet" in model_name:
             self.tokenizer = XLNetTokenizer.from_pretrained(model_name, do_lower_case=False)
             self.LM = XLNetModel.from_pretrained(model_name)
+        elif "esm" in model_name:
+            self.tokenizer = ESMTokenizer.from_pretrained(model_name, do_lower_case=False )
+            self.LM = ESMModel.from_pretrained(model_name)
         else:
             print("Unkown model name")
 
-        if self.hparams.gradient_checkpointing:
+        if self.hparams.gradient_checkpointing and "esm" not in model_name:
             self.LM.gradient_checkpointing_enable()
 
         if self.hparams.nr_frozen_epochs > 0:
@@ -350,7 +354,7 @@ class ProtTransDisorderPredictor(LightningModule):
             "--model_name",
             default="Rostlab/prot_bert_bfd",
             type=str,
-            help="ProtTrans language model to use as embedding encoder",
+            help="Language model to use as embedding encoder (ProtTrans or ESM)",
         )
         parser.add_argument(
             "--rnn",
@@ -450,6 +454,6 @@ class ProtTransDisorderPredictor(LightningModule):
             default=True,
             type=bool,
             help="Enable or disable gradient checkpointing which use the cpu memory \
-                with the gpu memory to store the model.",
+                with the gpu memory to store the model. (Does not apply to ESM models)",
         )
         return parent_parser

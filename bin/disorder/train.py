@@ -8,7 +8,7 @@ import os
 from datetime import datetime
 import glob
 
-from disorder_language_model import ProtTransDisorderPredictor
+from disorder_language_model import DisorderPredictor
 
 # Silence the warnings about transformers not loading correctly (i.e. decoder missing)
 logging.set_verbosity_error()
@@ -43,13 +43,13 @@ parser.add_argument(
 )
 
 # add model specific args
-parser = ProtTransDisorderPredictor.add_model_specific_args(parser)
+parser = DisorderPredictor.add_model_specific_args(parser)
 # add all the available trainer options to argparse
 parser = Trainer.add_argparse_args(parser)
 
 args = parser.parse_args()
 
-model = ProtTransDisorderPredictor(args)
+model = DisorderPredictor(args)
 
 logger = TensorBoardLogger(
     save_dir="../logs/",

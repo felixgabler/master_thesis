@@ -8,7 +8,7 @@ from transformers import logging
 
 from argparse import ArgumentParser, Namespace
 
-from disorder_language_model import ProtTransDisorderPredictor
+from disorder_language_model import DisorderPredictor
 
 # Silence the warnings about transformers not loading correctly (i.e. decoder missing)
 logging.set_verbosity_error()
@@ -43,7 +43,7 @@ parser.add_argument(
 )
 
 # add model specific args
-parser = ProtTransDisorderPredictor.add_model_specific_args(parser)
+parser = DisorderPredictor.add_model_specific_args(parser)
 # add all the available trainer options to argparse
 parser = Trainer.add_argparse_args(parser)
 
@@ -76,7 +76,7 @@ config = {
 def train_prottrans(c):
     args_dict = vars(args)
     args_dict.update(c)
-    model = ProtTransDisorderPredictor(Namespace(**args_dict))
+    model = DisorderPredictor(Namespace(**args_dict))
     trainer.fit(model)
 
 

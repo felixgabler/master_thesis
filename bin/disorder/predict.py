@@ -5,7 +5,7 @@ from transformers import logging
 
 from argparse import ArgumentParser
 
-from disorder_language_model import ProtTransDisorderPredictor
+from disorder_language_model import DisorderPredictor
 
 # Silence the warnings about transformers not loading correctly (i.e. decoder missing)
 logging.set_verbosity_error()
@@ -36,7 +36,7 @@ parser = Trainer.add_argparse_args(parser)
 
 args = parser.parse_args()
 
-model = ProtTransDisorderPredictor.load_from_checkpoint(args.checkpoint, hparams_file=args.hparams_file)
+model = DisorderPredictor.load_from_checkpoint(args.checkpoint, hparams_file=args.hparams_file)
 
 trainer = Trainer.from_argparse_args(args)
 
