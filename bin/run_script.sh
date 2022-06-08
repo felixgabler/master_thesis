@@ -15,3 +15,9 @@
 #python disorder/predict.py --checkpoint="logs/lightning_logs/version_04-06-2022--12-29-18/checkpoints/epoch=0-val_loss=93.68-val_acc=0.75-val_f1=0.00.ckpt" \
 #        --hparams_file="logs/lightning_logs/04-06-2022--12-29-18/hparams.yaml" \
 #        --precision=16 --accelerator="auto" --devices="auto" --strategy="dp" &> predict_bert_crf
+
+python disorder/hyperparam_tune.py --model_name="Rostlab/prot_bert_bfd" --precision=16 \
+       --accelerator="auto" --devices="auto" --strategy="dp" --min_epochs=20 --max_epochs=40 --loader_workers=4 \
+       --train_file="/tmp/global2/vikram/felix/master_thesis/data/disprot/flDPnn_Training_Annotation.txt" \
+       --val_file="/tmp/global2/vikram/felix/master_thesis/data/disprot/flDPnn_Validation_Annotation.txt" \
+       &> out_tune_bert
