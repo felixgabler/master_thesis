@@ -49,7 +49,9 @@ parser = Trainer.add_argparse_args(parser)
 
 args = parser.parse_args()
 
-tuning_callback = TuneReportCallback({"loss": "val_loss", "acc": "val_acc"})
+tuning_callback = TuneReportCallback({
+    "loss": "val_loss", "acc": "val_acc", "bac": "val_bac", "mcc": "val_mcc", "f1": "val_f1"
+})
 
 early_stop_callback = EarlyStopping(
     monitor=args.monitor,
@@ -65,10 +67,10 @@ trainer = Trainer.from_argparse_args(
 
 config = {
     "rnn": tune.choice(['lstm', 'gru']),
-    "rnn_layers": tune.choice([1, 2, 4]),
+    "rnn_layers": tune.choice([1, 2]),
     "crf_after_rnn": tune.choice([True, False]),
     "hidden_features": tune.choice([1024, 2048]),
-    "learning_rate": tune.loguniform(1e-4, 1e-1),
+    "learning_rate": tune.loguniform(1e-5, 1e-2),
     "nr_frozen_epochs": tune.choice([1, 3])
 }
 
@@ -82,10 +84,10 @@ def train_prottrans(c):
 
 trainable = tune.with_parameters(train_prottrans)
 
-reporter = tune.CLIReporter(metric_columns=["loss", "acc", "training_iteration"])
+reporter = tune.CLIReporter(metric_columns=["loss", "acc", "bac", "mcc", "f1", "training_iteration"])
 analysis = tune.run(
     trainable,
-    resources_per_trial={"cpu": 1, "gpu": 4},
+    resources_per_trial={"cpu": 1, "gpu": 1},
     metric="loss",
     mode="min",
     config=config,

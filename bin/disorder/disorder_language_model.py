@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader, RandomSampler
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence, pad_sequence
 
 from pytorch_lightning import LightningModule
-from torchmetrics import Accuracy
+from torchmetrics import Accuracy, F1Score, MatthewsCorrCoef
 
 from transformers import T5EncoderModel, T5Tokenizer
 from transformers import BertModel, BertTokenizer
@@ -38,9 +38,13 @@ class DisorderPredictor(LightningModule):
         self.save_hyperparameters(params)
 
         num_classes = len(self.hparams.label_set.split(","))
+        # The -100 is not necessary with CRF since it will return the unpadded anyways
+        # Removed from F1 due to IndexError: index -100 is out of bounds for dimension 1 with size 2
         self.metric_acc = Accuracy(num_classes=num_classes, ignore_index=-100)
-        # self.metric_f1 = F1Score(num_classes=num_classes, mdmc_average='global', ignore_index=-100)
-        # self.metric_mcc = MatthewsCorrCoef(num_classes=num_classes)
+        # behaves like sklearn.metrics.balanced_accuracy_score
+        self.metric_bac = Accuracy(num_classes=num_classes, average='macro', ignore_index=-100)
+        self.metric_f1 = F1Score(num_classes=num_classes, average='macro', mdmc_average='samplewise')
+        self.metric_mcc = MatthewsCorrCoef(num_classes=num_classes)
 
         self.__build_model()
 
@@ -60,7 +64,7 @@ class DisorderPredictor(LightningModule):
             self.tokenizer = XLNetTokenizer.from_pretrained(model_name, do_lower_case=False)
             self.LM = XLNetModel.from_pretrained(model_name)
         elif "esm" in model_name:
-            self.tokenizer = ESMTokenizer.from_pretrained(model_name, do_lower_case=False )
+            self.tokenizer = ESMTokenizer.from_pretrained(model_name, do_lower_case=False)
             self.LM = ESMModel.from_pretrained(model_name)
         else:
             print("Unkown model name")
@@ -221,37 +225,48 @@ class DisorderPredictor(LightningModule):
         Returns:
             - dictionary passed to the validation_end function.
         """
-        inputs, y, padded_y = batch
+        inputs, targets, padded_y = batch
         inputs = inputs.to(self.device)
-        y = y.to(self.device)
+        targets = targets.to(self.device)
         padded_y = padded_y.to(self.device)
 
-        y_hat = self.forward(**inputs)
+        preds = self.forward(**inputs)
         # y_hat = torch.argmax(model_out, dim=1)
         loss = self.loss(inputs['input_ids'], inputs['attention_mask'], inputs['length'], padded_y)
+        return {'loss': loss, 'targets': targets, 'preds': preds}
 
-        self.log('val_loss', loss, batch_size=self.hparams.batch_size)
-        self.log('val_acc', self.metric_acc(y_hat, y), batch_size=self.hparams.batch_size)
-        # self.log('val_f1', self.metric_f1(y_hat, y))
-        # self.log('val_mcc', self.metric_mcc(y_hat, y))
+    def validation_step_end(self, outputs):
+        self._log_metrics(outputs, 'val')
 
     def test_step(self, batch: tuple, batch_nb: int, *args, **kwargs):
         """ Similar to the training step but with the model in eval mode.
         Returns:
             - dictionary passed to the validation_end function.
         """
-        inputs, y, padded_y = batch
+        inputs, targets, padded_y = batch
         inputs = inputs.to(self.device)
-        y = y.to(self.device)
+        targets = targets.to(self.device)
 
-        y_hat = self.forward(**inputs)
-        # y_hat = torch.argmax(model_out, dim=1)
+        preds = self.forward(**inputs)
+        # preds = torch.argmax(model_out, dim=1)
         loss = self.loss(inputs['input_ids'], inputs['attention_mask'], inputs['length'], padded_y)
 
-        self.log('test_loss', loss, batch_size=self.hparams.batch_size)
-        self.log('test_acc', self.metric_acc(y_hat, y), batch_size=self.hparams.batch_size)
-        # self.log('test_f1', self.metric_f1(y_hat, y))
-        # self.log('test_mcc', self.metric_mcc(y_hat, y))
+        return {'loss': loss, 'targets': targets, 'preds': preds}
+
+    def test_step_end(self, outputs):
+        self._log_metrics(outputs, 'test')
+
+    def _log_metrics(self, outputs, prefix):
+        preds, targets = outputs['preds'], outputs['targets']
+        self.metric_acc(preds, targets)
+        self.metric_bac(preds, targets)
+        self.metric_f1(preds, targets)
+        self.metric_mcc(preds, targets)
+        self.log(f'{prefix}_loss', outputs['loss'], batch_size=self.hparams.batch_size)
+        self.log(f'{prefix}_acc', self.metric_acc, batch_size=self.hparams.batch_size)
+        self.log(f'{prefix}_bac', self.metric_bac, batch_size=self.hparams.batch_size)
+        self.log(f'{prefix}_f1', self.metric_f1, batch_size=self.hparams.batch_size)
+        self.log(f'{prefix}_mcc', self.metric_mcc, batch_size=self.hparams.batch_size)
 
     def predict_step(self, batch, batch_idx: int, *args, **kwargs):
         inputs, y, padded_y = batch
@@ -358,14 +373,14 @@ class DisorderPredictor(LightningModule):
         )
         parser.add_argument(
             "--rnn",
-            default="lstm",
+            default="gru",
             type=str,
             help="Type of RNN architecture to use",
             choices=['lstm', 'gru']
         )
         parser.add_argument(
             "--rnn_layers",
-            default=2,
+            default=1,
             type=int,
             help="Number of layers for the rnn.",
         )
@@ -395,7 +410,7 @@ class DisorderPredictor(LightningModule):
         )
         parser.add_argument(
             "--learning_rate",
-            default=3e-05,
+            default=3e-04,
             type=float,
             help="Classification head learning rate.",
         )
