@@ -290,7 +290,7 @@ class DisorderPredictor(LightningModule):
                 {"params": self.relu.parameters()},
                 {"params": self.hidden1.parameters()},
             ]
-        if self.hparams.strategy.endswith('_offload'):
+        if self.hparams.strategy is not None and self.hparams.strategy.endswith('_offload'):
             return DeepSpeedCPUAdam(parameters, lr=self.hparams.learning_rate)
         elif self.hparams.strategy == 'deepspeed_stage_3':
             return FusedAdam(parameters, lr=self.hparams.learning_rate)

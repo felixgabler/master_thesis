@@ -10,9 +10,6 @@ from argparse import ArgumentParser, Namespace
 
 from disorder_language_model import DisorderPredictor
 
-# Silence the warnings about transformers not loading correctly (i.e. decoder missing)
-logging.set_verbosity_error()
-
 parser = ArgumentParser()
 
 # Checkpointing and Early Stopping
@@ -66,6 +63,7 @@ trainer = Trainer.from_argparse_args(
 )
 
 config = {
+    "model_name": tune.choice(['facebook/esm-1b', 'Rostlab/prot_bert_bfd', 'Rostlab/prot_t5_xl_half_uniref50-enc']),
     "rnn": tune.choice(['lstm', 'gru']),
     "rnn_layers": tune.choice([1, 2]),
     "crf_after_rnn": tune.choice([True, False]),
@@ -76,8 +74,12 @@ config = {
 
 
 def train_prottrans(c):
+    # Silence the warnings about transformers not loading correctly (i.e. decoder missing)
+    logging.set_verbosity_error()
     args_dict = vars(args)
     args_dict.update(c)
+    if args_dict['model_name'] == 'facebook/esm-1b':
+        args_dict['max_length'] = 1024
     model = DisorderPredictor(Namespace(**args_dict))
     trainer.fit(model)
 
@@ -85,15 +87,26 @@ def train_prottrans(c):
 trainable = tune.with_parameters(train_prottrans)
 
 reporter = tune.CLIReporter(metric_columns=["loss", "acc", "bac", "mcc", "f1", "training_iteration"])
+
+# We are not using a cluster launcher but just one node for now
+# https://docs.ray.io/en/latest/tune/tutorials/tune-checkpoints.html#checkpointing-examples
+sync_config = tune.SyncConfig(syncer=None)
+
 analysis = tune.run(
     trainable,
     resources_per_trial={"cpu": 1, "gpu": 1},
     metric="loss",
     mode="min",
     config=config,
-    num_samples=10,
-    local_dir='../raytune_result',
-    name="tune_prottrans",
+    num_samples=15,
+    local_dir='./raytune_result',
+    name="tune_esm_prottrans",
+    sync_config=sync_config,
+    checkpoint_score_attr="max-bac",
+    keep_checkpoints_num=5,
+    # a very useful trick! this will resume from the last run specified by
+    # sync_config (if one exists), otherwise it will start a new tuning run
+    resume="AUTO",
     progress_reporter=reporter,
 )
 
