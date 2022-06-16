@@ -65,11 +65,12 @@ trainer = Trainer.from_argparse_args(
 config = {
     "model_name": tune.choice(['facebook/esm-1b', 'Rostlab/prot_bert_bfd', 'Rostlab/prot_t5_xl_half_uniref50-enc']),
     "rnn": tune.choice(['lstm', 'gru']),
-    "rnn_layers": tune.choice([1, 2]),
+    # "rnn_layers": tune.choice([1, 2]),
     "crf_after_rnn": tune.choice([True, False]),
-    "hidden_features": tune.choice([1024, 2048]),
+    # "hidden_features": tune.choice([1024, 2048]),
     "learning_rate": tune.loguniform(1e-5, 1e-2),
-    "nr_frozen_epochs": tune.choice([1, 3])
+    "encoder_learning_rate": tune.loguniform(5e-6, 1e-2),
+    # "nr_frozen_epochs": tune.choice([1, 3]),
 }
 
 
@@ -86,7 +87,8 @@ def train_prottrans(c):
 
 trainable = tune.with_parameters(train_prottrans)
 
-reporter = tune.CLIReporter(metric_columns=["loss", "acc", "bac", "mcc", "f1", "training_iteration"])
+reporter = tune.CLIReporter(
+    metric_columns=["loss", "acc", "bac", "mcc", "f1", "time_this_iter_s", "training_iteration"])
 
 # We are not using a cluster launcher but just one node for now
 # https://docs.ray.io/en/latest/tune/tutorials/tune-checkpoints.html#checkpointing-examples
@@ -98,7 +100,7 @@ analysis = tune.run(
     metric="loss",
     mode="min",
     config=config,
-    num_samples=15,
+    num_samples=30,
     local_dir='./raytune_result',
     name="tune_esm_prottrans",
     sync_config=sync_config,

@@ -367,7 +367,7 @@ class DisorderPredictor(LightningModule):
         parser = parent_parser.add_argument_group("ProtTransDisorderPredictor")
         parser.add_argument(
             "--model_name",
-            default="Rostlab/prot_bert_bfd",
+            default="Rostlab/prot_t5_xl_half_uniref50-enc",
             type=str,
             help="Language model to use as embedding encoder (ProtTrans or ESM)",
         )
@@ -404,13 +404,13 @@ class DisorderPredictor(LightningModule):
         )
         parser.add_argument(
             "--encoder_learning_rate",
-            default=5e-06,
+            default=1e-05,
             type=float,
             help="Encoder specific learning rate.",
         )
         parser.add_argument(
             "--learning_rate",
-            default=3e-04,
+            default=2e-04,
             type=float,
             help="Classification head learning rate.",
         )
