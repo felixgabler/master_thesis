@@ -1,5 +1,6 @@
 import glob
 import re
+from urllib.request import urlopen
 
 import pandas as pd
 from pqdm.threads import pqdm
@@ -23,6 +24,19 @@ def get_sequence_from_file(sequences_folder: str, uniprot_id: str):
     except Exception as e:
         print(f'Failed reading fasta file {uniprot_id}: {e.message if hasattr(e, "message") else e}')
     return None
+
+
+def load_sequence_from_uniprot(uniprot_id: str) -> str:
+    res = ''
+    try:
+        with urlopen(f"https://www.uniprot.org/uniprot/{uniprot_id}.fasta") as response:
+            for decoded in response.read():
+                if not decoded.startswith('>'):
+                    res += decoded
+    except Exception as e:
+        print(f'Failed fetching sequence: {e.message if hasattr(e, "message") else e}')
+        pass
+    return res
 
 
 def extend_proteome_features_with_new_property(fun, filter_sequences, proteome_file: str, props: [str],

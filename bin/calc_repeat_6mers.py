@@ -11,6 +11,7 @@ from tqdm.auto import tqdm
 from utils.extend_aa_scores import get_sequence_from_file
 
 data_dir = '/tmp/global2/vikram/felix/master_thesis/data'
+data_dir = '/Users/felixgabler/PycharmProjects/master_thesis/data'
 af_data_dir = f'{data_dir}/alphafold/v2'
 already_finished_list_file = f"{af_data_dir}/proteomes_with_6mer_counts_2000.csv"
 
@@ -97,4 +98,5 @@ def calculate_6mer_counts():
 
 
 if __name__ == '__main__':
-    calculate_6mer_counts()
+    extend_proteome_features_with_6mer_counts(f"{af_data_dir}/AA_scores/SWISSPROT.csv")
+    # calculate_6mer_counts()

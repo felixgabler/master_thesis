@@ -7,8 +7,12 @@ from scipy.spatial.distance import jensenshannon
 from utils.extend_aa_scores import calculate_new_property_for_proteomes, get_sequence_from_file
 
 data_dir = '/tmp/global2/vikram/felix/master_thesis/data/alphafold/v2'
+trembl_aa_counts = "/tmp/global2/vikram/felix/kmer_counts/trembl_aa_counts.csv"
 
-df_aa_counts = pd.read_csv("/tmp/global2/vikram/felix/kmer_counts/trembl_aa_counts.csv")
+data_dir = '/Users/felixgabler/PycharmProjects/master_thesis/data/alphafold/v2'
+trembl_aa_counts = '/Users/felixgabler/PycharmProjects/master_thesis/data/uniprot/trembl_aa_counts.csv'
+
+df_aa_counts = pd.read_csv(trembl_aa_counts)
 uniprot_aa_order = df_aa_counts['aa'].values
 uniprot_aa_distr = (df_aa_counts['count'] / df_aa_counts['count'].sum()).values
 

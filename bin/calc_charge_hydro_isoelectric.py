@@ -3,10 +3,11 @@ import numpy as np
 from collections import Counter
 from Bio.SeqUtils.IsoelectricPoint import IsoelectricPoint
 
-from utils.extend_aa_scores import calculate_new_property_for_proteomes, get_sequence_from_file, \
-    extend_proteome_features_with_new_property
+from utils.extend_aa_scores import calculate_new_property_for_proteomes, get_sequence_from_file
 
 data_dir = '/tmp/global2/vikram/felix/master_thesis/data/alphafold/v2'
+
+data_dir = '/Users/felixgabler/PycharmProjects/master_thesis/data/alphafold/v2'
 
 pos_charge_aas = ['K', 'R', 'H']
 neg_charge_aas = ['D', 'E']

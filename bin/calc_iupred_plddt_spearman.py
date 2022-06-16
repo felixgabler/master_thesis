@@ -9,7 +9,9 @@ import numpy as np
 from tqdm.auto import tqdm
 from pqdm.threads import pqdm
 from scipy.stats import spearmanr
-from iupred3.iupred3_lib import iupred, read_seq
+
+from utils.extend_aa_scores import get_sequence_from_file
+from iupred3.iupred3_lib import iupred
 
 data_dir = '/tmp/global2/vikram/felix/master_thesis/data/alphafold/v2'
 
@@ -31,16 +33,8 @@ def get_plddt_scores(uniprot_id: str, proteome: str):
     return np.asarray(pLDDT_scores)
 
 
-def get_sequence_from_file(uniprot_id: str):
-    try:
-        return read_seq(f'{data_dir}/sequences/{uniprot_id}.fasta')
-    except Exception as e:
-        print(f'Failed reading fasta file {uniprot_id}: {e.message if hasattr(e, "message") else e}')
-    return None
-
-
 def get_iupred_scores(uniprot_id: str):
-    seq = get_sequence_from_file(uniprot_id)
+    seq = get_sequence_from_file(f'{data_dir}/sequences', uniprot_id)
     if seq is None:
         return None
     try:
@@ -82,25 +76,32 @@ def extend_proteome_features_with_iupred_spearman(proteome_file: str):
                                               index=False)
         print('Already filled with iupred spearman')
         return
-    df_proteome.loc[to_fill, 'iupred_plddt_spearman'] = pqdm(df_proteome['uniprot_id'][to_fill],
-                                                             calculate_spearman(proteome),
-                                                             n_jobs=10, desc=f'Sequences in {proteome}')
-    df_proteome.to_csv(f'{data_dir}/AA_scores/{proteome}.csv')
+    splits = np.array_split(to_fill, len(to_fill) / 1000 + 1)
+    for i, fill_split in enumerate(splits):
+        df_proteome.loc[fill_split, 'iupred_plddt_spearman'] = pqdm(df_proteome['uniprot_id'][fill_split],
+                                                                    calculate_spearman(proteome),
+                                                                    n_jobs=10,
+                                                                    desc=f'Sequences in {proteome}, split {i + 1}/{len(splits)}')
+        df_proteome.to_csv(f'{data_dir}/AA_scores/{proteome}.csv')
+    # df_proteome.loc[to_fill, 'iupred_plddt_spearman'] = pqdm(df_proteome['uniprot_id'][to_fill],
+    #                                                          calculate_spearman(proteome),
+    #                                                          n_jobs=10, desc=f'Sequences in {proteome}')
+    # df_proteome.to_csv(f'{data_dir}/AA_scores/{proteome}.csv')
     del df_proteome
     return
 
 
 if __name__ == '__main__':
-    # extend_proteome_features_with_iupred_spearman(f"{data_dir}/AA_scores/9EURO1.csv")
-    proteomes_with_iupred_auc = pd.read_csv(f"{data_dir}/proteomes_with_iupred_auc.csv", header=None)
-    proteomes_with_iupred_auc_list = proteomes_with_iupred_auc.squeeze('columns').to_list()
-    proteomes_with_iupred_spearman = pd.read_csv(f"{data_dir}/proteomes_with_iupred_spearman.csv", header=None)
-    proteomes_with_iupred_spearman_list = proteomes_with_iupred_spearman.squeeze('columns').to_list()
-    proteomes_to_extend_with_spearman = set(proteomes_with_iupred_auc_list).difference(
-        set(proteomes_with_iupred_spearman_list))
-    all_proteome_files = glob.glob(f"{data_dir}/AA_scores/*.csv")
-    proteome_files_without_spearman = list(
-        filter(lambda file: re.search(r"/([A-Z0-9]+).csv", file).group(1) in proteomes_to_extend_with_spearman,
-               all_proteome_files))
-    for file in tqdm(proteome_files_without_spearman, desc='Files'):
-        extend_proteome_features_with_iupred_spearman(file)
+    extend_proteome_features_with_iupred_spearman(f"{data_dir}/AA_scores/SWISSPROT.csv")
+    # proteomes_with_iupred_auc = pd.read_csv(f"{data_dir}/proteomes_with_iupred_auc.csv", header=None)
+    # proteomes_with_iupred_auc_list = proteomes_with_iupred_auc.squeeze('columns').to_list()
+    # proteomes_with_iupred_spearman = pd.read_csv(f"{data_dir}/proteomes_with_iupred_spearman.csv", header=None)
+    # proteomes_with_iupred_spearman_list = proteomes_with_iupred_spearman.squeeze('columns').to_list()
+    # proteomes_to_extend_with_spearman = set(proteomes_with_iupred_auc_list).difference(
+    #     set(proteomes_with_iupred_spearman_list))
+    # all_proteome_files = glob.glob(f"{data_dir}/AA_scores/*.csv")
+    # proteome_files_without_spearman = list(
+    #     filter(lambda file: re.search(r"/([A-Z0-9]+).csv", file).group(1) in proteomes_to_extend_with_spearman,
+    #            all_proteome_files))
+    # for file in tqdm(proteome_files_without_spearman, desc='Files'):
+    #     extend_proteome_features_with_iupred_spearman(file)
