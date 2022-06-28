@@ -92,6 +92,7 @@ class NLPDataset(Dataset):
 
 
 def load_dataset(path, max_length=1536):
+    accessions = []
     seqs = []
     labels = []
     with open(path) as file_handler:
@@ -100,12 +101,14 @@ def load_dataset(path, max_length=1536):
             i += 1
             if i < 10 or len(line) > max_length:
                 continue
-            i_offset = i - 10
-            if i_offset % 7 == 1:
+            i_offset = (i - 10) % 7
+            if i_offset == 0:
+                accessions.append(line.strip())
+            elif i_offset == 1:
                 # Map rare amino acids
                 seqs.append(" ".join(list(re.sub(r"[UZOB]", "X", line.strip()))))
-            elif i_offset % 7 == 2:
+            elif i_offset == 2:
                 labels.append(line.strip())
 
     assert len(seqs) == len(labels)
-    return NLPDataset([{"seq": seqs[i], "label": labels[i]} for i in range(len(seqs))])
+    return NLPDataset([{"seq": seqs[i], "label": labels[i], "acc": accessions[i]} for i in range(len(seqs))])

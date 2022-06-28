@@ -60,7 +60,7 @@ logger = TensorBoardLogger(
 ckpt_path = os.path.join(
     logger.save_dir,
     logger.name,
-    f"version_{logger.version}",
+    f"{logger.version}",
     "checkpoints",
 )
 checkpoint_callback = ModelCheckpoint(

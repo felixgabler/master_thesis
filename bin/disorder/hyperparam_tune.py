@@ -63,11 +63,12 @@ trainer = Trainer.from_argparse_args(
 )
 
 config = {
-    "model_name": tune.choice(['facebook/esm-1b', 'Rostlab/prot_bert_bfd', 'Rostlab/prot_t5_xl_half_uniref50-enc']),
-    "rnn": tune.choice(['lstm', 'gru']),
+    # "model_name": tune.choice(['facebook/esm-1b', 'Rostlab/prot_bert_bfd', 'Rostlab/prot_t5_xl_half_uniref50-enc']),
+    # "rnn": tune.choice(['lstm', 'gru']),
     # "rnn_layers": tune.choice([1, 2]),
-    "crf_after_rnn": tune.choice([True, False]),
+    # "crf_after_rnn": tune.choice([True, False]),
     # "hidden_features": tune.choice([1024, 2048]),
+    "accumulate_grad_batches": tune.choice([4, 20, 64]),
     "learning_rate": tune.loguniform(1e-5, 1e-2),
     "encoder_learning_rate": tune.loguniform(5e-6, 1e-2),
     # "nr_frozen_epochs": tune.choice([1, 3]),
@@ -100,9 +101,9 @@ analysis = tune.run(
     metric="loss",
     mode="min",
     config=config,
-    num_samples=30,
+    num_samples=12,
     local_dir='./raytune_result',
-    name="tune_esm_prottrans",
+    name="tune_accumulate_grad",
     sync_config=sync_config,
     checkpoint_score_attr="max-bac",
     keep_checkpoints_num=5,
