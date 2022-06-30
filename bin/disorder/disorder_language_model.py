@@ -1,26 +1,22 @@
+import logging as log
+from argparse import ArgumentParser
+
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, RandomSampler
-from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence, pad_sequence
-
+import torch.nn.functional as F
+from bi_lstm_crf import CRF
+from deepspeed.ops.adam import FusedAdam, DeepSpeedCPUAdam
 from pytorch_lightning import LightningModule
+from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence, pad_sequence
+from torch.utils.data import DataLoader, RandomSampler
 from torchmetrics import Accuracy, F1Score, MatthewsCorrCoef
-
-from transformers import T5EncoderModel, T5Tokenizer
-from transformers import BertModel, BertTokenizer
-from transformers import XLNetModel, XLNetTokenizer
-from transformers import AlbertModel, AlbertTokenizer
-from transformers import ESMModel, ESMTokenizer
-
 from torchnlp.encoders import LabelEncoder
 from torchnlp.utils import collate_tensors
-
-from bi_lstm_crf import CRF
-
-from deepspeed.ops.adam import FusedAdam, DeepSpeedCPUAdam
-
-from argparse import ArgumentParser
-import logging as log
+from transformers import AlbertModel, AlbertTokenizer
+from transformers import BertModel, BertTokenizer
+from transformers import ESMModel, ESMTokenizer
+from transformers import T5EncoderModel, T5Tokenizer
+from transformers import XLNetModel, XLNetTokenizer
 
 from data_utils import load_dataset
 
@@ -95,22 +91,12 @@ class DisorderPredictor(LightningModule):
 
         rnn_out = 2 * hidden_features if self.hparams.bidirectional_rnn else hidden_features
 
-        if self.hparams.crf_after_rnn:
-            self.crf = CRF(
-                rnn_out,
-                self.label_encoder.vocab_size
-            )
-        else:
-            self.hidden1 = nn.Linear(rnn_out, hidden_features)
+        self.hidden1 = nn.Linear(rnn_out, hidden_features)
 
-            self.relu = nn.ReLU()
-
-            self.dropout = nn.Dropout(p=0.3)
-
-            self.crf = CRF(
-                hidden_features,
-                self.label_encoder.vocab_size
-            )
+        self.crf = CRF(
+            hidden_features,
+            self.label_encoder.vocab_size
+        )
 
     def prepare_sample(self, sample: list, prepare_target: bool = True) -> (dict, dict):
         """
@@ -169,10 +155,9 @@ class DisorderPredictor(LightningModule):
         lstm_out, _ = self.lstm(pack_padded_sequences_vectors)
         x, _ = pad_packed_sequence(lstm_out, batch_first=True, total_length=self.hparams.max_length)
 
-        if not self.hparams.crf_after_rnn:
-            x = self.hidden1(x)
-            x = self.relu(x)
-            x = self.dropout(x)
+        x = self.hidden1(x)
+        x = F.relu(x)
+        x = F.dropout(x, 0.3)
 
         return x, attention_mask
 
@@ -278,18 +263,13 @@ class DisorderPredictor(LightningModule):
         """ Sets different Learning rates for different parameter groups. """
         parameters = [
             {"params": self.crf.parameters()},
+            {"params": self.hidden1.parameters()},
             {"params": self.lstm.parameters()},
             {
                 "params": self.LM.parameters(),
                 "lr": self.hparams.encoder_learning_rate,
             },
         ]
-        if not self.hparams.crf_after_rnn:
-            parameters = parameters + [
-                {"params": self.dropout.parameters()},
-                {"params": self.relu.parameters()},
-                {"params": self.hidden1.parameters()},
-            ]
         if self.hparams.strategy is not None and self.hparams.strategy.endswith('_offload'):
             return DeepSpeedCPUAdam(parameters, lr=self.hparams.learning_rate)
         elif self.hparams.strategy == 'deepspeed_stage_3':
@@ -389,12 +369,6 @@ class DisorderPredictor(LightningModule):
             default=True,
             type=bool,
             help="Enable bidirectional RNN in the encoder.",
-        )
-        parser.add_argument(
-            "--crf_after_rnn",
-            default=False,
-            type=bool,
-            help="Whether to directly feed the RNN output into the CRF or to add linear net and dropout.",
         )
         parser.add_argument(
             "--hidden_features",
