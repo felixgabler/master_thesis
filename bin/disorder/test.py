@@ -23,6 +23,12 @@ parser.add_argument(
     type=str,
     help="Path to the model parameters",
 )
+parser.add_argument(
+    "--test_file",
+    default="../data/disprot/flDPnn_Test_Annotation.txt",
+    type=str,
+    help="Path to the file containing the test data.",
+)
 
 # add all the available trainer options to argparse
 parser = Trainer.add_argparse_args(parser)
@@ -33,6 +39,4 @@ model = DisorderPredictor.load_from_checkpoint(args.checkpoint, hparams_file=arg
 
 trainer = Trainer.from_argparse_args(args, profiler="simple")
 
-metrics = trainer.test(model)
-
-print(f"Resulting metrics: {metrics}")
+trainer.test(model)
