@@ -348,6 +348,53 @@ class DisorderPredictor(LightningModule):
         )
 
     @staticmethod
+    def add_data_specific_args(parser: ArgumentParser) -> ArgumentParser:
+        parser.add_argument(
+            "--skip_first_lines",
+            default=10,
+            type=int,
+            help="Number of lines to skip in the data file.",
+        )
+        parser.add_argument(
+            "--lines_per_entry",
+            default=7,
+            type=int,
+            help="How many lines each entry in the data file has.",
+        )
+        parser.add_argument(
+            "--train_file",
+            default="../data/disprot/flDPnn_Training_Annotation.txt",
+            type=str,
+            help="Path to the file containing the train data.",
+        )
+        parser.add_argument(
+            "--val_file",
+            default="../data/disprot/flDPnn_Validation_Annotation.txt",
+            type=str,
+            help="Path to the file containing the validation data.",
+        )
+        parser.add_argument(
+            "--test_file",
+            default="../data/disprot/flDPnn_Test_Annotation.txt",
+            type=str,
+            help="Path to the file containing the test data.",
+        )
+        parser.add_argument(
+            "--predict_file",
+            default="../data/disprot/flDPnn_Validation_Annotation.txt",
+            type=str,
+            help="Path to the file containing the prediction data.",
+        )
+        parser.add_argument(
+            "--loader_workers",
+            default=4,
+            type=int,
+            help="How many subprocesses to use for data loading. 0 means that \
+                        the data will be loaded in the main process.",
+        )
+        return parser
+
+    @staticmethod
     def add_model_specific_args(parent_parser: ArgumentParser) -> ArgumentParser:
         """ Parser for Estimator specific arguments/hyperparameters.
         :param parent_parser: HyperOptArgumentParser obj
@@ -405,6 +452,7 @@ class DisorderPredictor(LightningModule):
             help="Number of epochs we want to keep the encoder model frozen.",
         )
         # Data Args:
+        DisorderPredictor.add_data_specific_args(parser)
         parser.add_argument(
             "--max_length",
             default=1536,
@@ -416,37 +464,6 @@ class DisorderPredictor(LightningModule):
             default="0,1",
             type=str,
             help="Classification labels set.",
-        )
-        parser.add_argument(
-            "--train_file",
-            default="../data/disprot/flDPnn_Training_Annotation.txt",
-            type=str,
-            help="Path to the file containing the train data.",
-        )
-        parser.add_argument(
-            "--val_file",
-            default="../data/disprot/flDPnn_Validation_Annotation.txt",
-            type=str,
-            help="Path to the file containing the validation data.",
-        )
-        parser.add_argument(
-            "--test_file",
-            default="../data/disprot/flDPnn_Test_Annotation.txt",
-            type=str,
-            help="Path to the file containing the test data.",
-        )
-        parser.add_argument(
-            "--predict_file",
-            default="../data/disprot/flDPnn_Validation_Annotation.txt",
-            type=str,
-            help="Path to the file containing the prediction data.",
-        )
-        parser.add_argument(
-            "--loader_workers",
-            default=4,
-            type=int,
-            help="How many subprocesses to use for data loading. 0 means that \
-                the data will be loaded in the main process.",
         )
         parser.add_argument(
             "--gradient_checkpointing",
