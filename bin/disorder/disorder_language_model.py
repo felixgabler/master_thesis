@@ -42,25 +42,38 @@ class DisorderPredictor(LightningModule):
         self.metric_f1 = F1Score(num_classes=num_classes, average='macro', mdmc_average='samplewise')
         self.metric_mcc = MatthewsCorrCoef(num_classes=num_classes)
 
-        self.__build_model()
+        model_name = self.hparams.model_name
+        """ Tokenizer and label encoder are needed for prepare_sample """
+        if "t5" in model_name:
+            self.tokenizer = T5Tokenizer.from_pretrained(model_name, do_lower_case=False)
+        elif "albert" in model_name:
+            self.tokenizer = AlbertTokenizer.from_pretrained(model_name, do_lower_case=False)
+        elif "bert" in model_name:
+            self.tokenizer = BertTokenizer.from_pretrained(model_name, do_lower_case=False)
+        elif "xlnet" in model_name:
+            self.tokenizer = XLNetTokenizer.from_pretrained(model_name, do_lower_case=False)
+        elif "esm" in model_name:
+            self.tokenizer = ESMTokenizer.from_pretrained(model_name, do_lower_case=False)
+        else:
+            print("Unkown model name")
 
-    def __build_model(self) -> None:
+        # Label Encoder
+        self.label_encoder = LabelEncoder(self.hparams.label_set.split(","), reserved_labels=[], unknown_index=None)
+
+        self.build_model()
+
+    def build_model(self) -> None:
         model_name = self.hparams.model_name
         """ Init BERT model + tokenizer + classification head."""
         if "t5" in model_name:
-            self.tokenizer = T5Tokenizer.from_pretrained(model_name, do_lower_case=False)
             self.LM = T5EncoderModel.from_pretrained(model_name)
         elif "albert" in model_name:
-            self.tokenizer = AlbertTokenizer.from_pretrained(model_name, do_lower_case=False)
             self.LM = AlbertModel.from_pretrained(model_name)
         elif "bert" in model_name:
-            self.tokenizer = BertTokenizer.from_pretrained(model_name, do_lower_case=False)
             self.LM = BertModel.from_pretrained(model_name)
         elif "xlnet" in model_name:
-            self.tokenizer = XLNetTokenizer.from_pretrained(model_name, do_lower_case=False)
             self.LM = XLNetModel.from_pretrained(model_name)
         elif "esm" in model_name:
-            self.tokenizer = ESMTokenizer.from_pretrained(model_name, do_lower_case=False)
             self.LM = ESMModel.from_pretrained(model_name)
         else:
             print("Unkown model name")
@@ -72,9 +85,6 @@ class DisorderPredictor(LightningModule):
             self.freeze_encoder()
         else:
             self._frozen = False
-
-        # Label Encoder
-        self.label_encoder = LabelEncoder(self.hparams.label_set.split(","), reserved_labels=[], unknown_index=None)
 
         hidden_features = self.hparams.hidden_features
 
@@ -344,7 +354,7 @@ class DisorderPredictor(LightningModule):
         Returns:
             - updated parser
         """
-        parser = parent_parser.add_argument_group("ProtTransDisorderPredictor")
+        parser = parent_parser.add_argument_group("DisorderPredictor")
         parser.add_argument(
             "--model_name",
             default="Rostlab/prot_t5_xl_half_uniref50-enc",
