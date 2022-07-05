@@ -7,18 +7,9 @@ import torch.nn.functional as F
 from bi_lstm_crf import CRF
 from deepspeed.ops.adam import FusedAdam, DeepSpeedCPUAdam
 from pytorch_lightning import LightningModule
-from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence, pad_sequence
-from torch.utils.data import DataLoader, RandomSampler
+from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 from torchmetrics import Accuracy, F1Score, MatthewsCorrCoef
-from torchnlp.encoders import LabelEncoder
-from torchnlp.utils import collate_tensors
-from transformers import AlbertModel, AlbertTokenizer
-from transformers import BertModel, BertTokenizer
-from transformers import ESMModel, ESMTokenizer
-from transformers import T5EncoderModel, T5Tokenizer
-from transformers import XLNetModel, XLNetTokenizer
-
-from data_utils import load_dataset
+from transformers import AlbertModel, BertModel, ESMModel, T5EncoderModel, XLNetModel
 
 
 class DisorderPredictor(LightningModule):
@@ -33,32 +24,14 @@ class DisorderPredictor(LightningModule):
         # https://pytorch-lightning.readthedocs.io/en/stable/common/hyperparameters.html#lightningmodule-hyperparameters
         self.save_hyperparameters(params)
 
-        num_classes = len(self.hparams.label_set.split(","))
+        self.num_classes = len(self.hparams.label_set.split(","))
         # The -100 is not necessary with CRF since it will return the unpadded anyways
         # Removed from F1 due to IndexError: index -100 is out of bounds for dimension 1 with size 2
-        self.metric_acc = Accuracy(num_classes=num_classes, ignore_index=-100)
+        self.metric_acc = Accuracy(num_classes=self.num_classes, ignore_index=-100)
         # behaves like sklearn.metrics.balanced_accuracy_score
-        self.metric_bac = Accuracy(num_classes=num_classes, average='macro', ignore_index=-100)
-        self.metric_f1 = F1Score(num_classes=num_classes, average='macro', mdmc_average='samplewise')
-        self.metric_mcc = MatthewsCorrCoef(num_classes=num_classes)
-
-        model_name = self.hparams.model_name
-        """ Tokenizer and label encoder are needed for prepare_sample """
-        if "t5" in model_name:
-            self.tokenizer = T5Tokenizer.from_pretrained(model_name, do_lower_case=False)
-        elif "albert" in model_name:
-            self.tokenizer = AlbertTokenizer.from_pretrained(model_name, do_lower_case=False)
-        elif "bert" in model_name:
-            self.tokenizer = BertTokenizer.from_pretrained(model_name, do_lower_case=False)
-        elif "xlnet" in model_name:
-            self.tokenizer = XLNetTokenizer.from_pretrained(model_name, do_lower_case=False)
-        elif "esm" in model_name:
-            self.tokenizer = ESMTokenizer.from_pretrained(model_name, do_lower_case=False)
-        else:
-            print("Unkown model name")
-
-        # Label Encoder
-        self.label_encoder = LabelEncoder(self.hparams.label_set.split(","), reserved_labels=[], unknown_index=None)
+        self.metric_bac = Accuracy(num_classes=self.num_classes, average='macro', ignore_index=-100)
+        self.metric_f1 = F1Score(num_classes=self.num_classes, average='macro', mdmc_average='samplewise')
+        self.metric_mcc = MatthewsCorrCoef(num_classes=self.num_classes)
 
         self.build_model()
 
@@ -103,46 +76,7 @@ class DisorderPredictor(LightningModule):
 
         self.hidden1 = nn.Linear(rnn_out, hidden_features)
 
-        self.crf = CRF(
-            hidden_features,
-            self.label_encoder.vocab_size
-        )
-
-    def prepare_sample(self, sample: list, prepare_target: bool = True) -> (dict, dict):
-        """
-        Function that prepares a sample to input the model.
-        :param prepare_target: also load label
-        :param sample: list of dictionaries.
-
-        Returns:
-            - dictionary with the expected model inputs.
-            - dictionary with the expected target labels.
-        """
-        sample = collate_tensors(sample)
-        seq, label = sample['seq'], sample['label']
-
-        inputs = self.tokenizer(seq,
-                                # Special tokens not useful for CRF return values
-                                add_special_tokens=False,
-                                padding='max_length',
-                                return_length=True,
-                                truncation=True,
-                                return_tensors='pt',
-                                max_length=self.hparams.max_length)
-
-        if not prepare_target:
-            return inputs, {}
-
-        # Prepare target:
-        try:
-            labels = [self.label_encoder.batch_encode(l) for l in label]
-            unpadded = torch.cat(labels).unsqueeze(0)
-            labels.append(torch.empty(self.hparams.max_length))
-            padded_sequences_labels = pad_sequence(labels, batch_first=True)
-            return inputs, unpadded, padded_sequences_labels[:-1]
-        except RuntimeError:
-            print(label)
-            raise Exception("Label encoder found an unknown label.")
+        self.crf = CRF(hidden_features, self.num_classes)
 
     def __build_features(self, input_ids, attention_mask, length):
         """
@@ -306,94 +240,6 @@ class DisorderPredictor(LightningModule):
             param.requires_grad = False
         self._frozen = True
 
-    def train_dataloader(self) -> DataLoader:
-        """ Function that loads the train set. """
-        train_dataset = load_dataset(self.hparams.train_file, self.hparams.max_length)
-        return DataLoader(
-            dataset=train_dataset,
-            sampler=RandomSampler(train_dataset),
-            batch_size=self.hparams.batch_size,
-            collate_fn=self.prepare_sample,
-            num_workers=self.hparams.loader_workers,
-        )
-
-    def val_dataloader(self) -> DataLoader:
-        """ Function that loads the validation set. """
-        dev_dataset = load_dataset(self.hparams.val_file, self.hparams.max_length)
-        return DataLoader(
-            dataset=dev_dataset,
-            batch_size=self.hparams.batch_size,
-            collate_fn=self.prepare_sample,
-            num_workers=self.hparams.loader_workers,
-        )
-
-    def test_dataloader(self) -> DataLoader:
-        """ Function that loads the validation set. """
-        test_dataset = load_dataset(self.hparams.test_file, self.hparams.max_length)
-        return DataLoader(
-            dataset=test_dataset,
-            batch_size=self.hparams.batch_size,
-            collate_fn=self.prepare_sample,
-            num_workers=self.hparams.loader_workers,
-        )
-
-    def predict_dataloader(self) -> DataLoader:
-        """ Function that loads the prediction set. """
-        predict_dataset = load_dataset(self.hparams.predict_file, self.hparams.max_length)
-        return DataLoader(
-            dataset=predict_dataset,
-            batch_size=self.hparams.batch_size,
-            collate_fn=self.prepare_sample,
-            num_workers=self.hparams.loader_workers,
-        )
-
-    @staticmethod
-    def add_data_specific_args(parser: ArgumentParser) -> ArgumentParser:
-        parser.add_argument(
-            "--skip_first_lines",
-            default=10,
-            type=int,
-            help="Number of lines to skip in the data file.",
-        )
-        parser.add_argument(
-            "--lines_per_entry",
-            default=7,
-            type=int,
-            help="How many lines each entry in the data file has.",
-        )
-        parser.add_argument(
-            "--train_file",
-            default="../data/disprot/flDPnn_Training_Annotation.txt",
-            type=str,
-            help="Path to the file containing the train data.",
-        )
-        parser.add_argument(
-            "--val_file",
-            default="../data/disprot/flDPnn_Validation_Annotation.txt",
-            type=str,
-            help="Path to the file containing the validation data.",
-        )
-        parser.add_argument(
-            "--test_file",
-            default="../data/disprot/flDPnn_Test_Annotation.txt",
-            type=str,
-            help="Path to the file containing the test data.",
-        )
-        parser.add_argument(
-            "--predict_file",
-            default="../data/disprot/flDPnn_Validation_Annotation.txt",
-            type=str,
-            help="Path to the file containing the prediction data.",
-        )
-        parser.add_argument(
-            "--loader_workers",
-            default=4,
-            type=int,
-            help="How many subprocesses to use for data loading. 0 means that \
-                        the data will be loaded in the main process.",
-        )
-        return parser
-
     @staticmethod
     def add_model_specific_args(parent_parser: ArgumentParser) -> ArgumentParser:
         """ Parser for Estimator specific arguments/hyperparameters.
@@ -452,7 +298,6 @@ class DisorderPredictor(LightningModule):
             help="Number of epochs we want to keep the encoder model frozen.",
         )
         # Data Args:
-        DisorderPredictor.add_data_specific_args(parser)
         parser.add_argument(
             "--max_length",
             default=1536,

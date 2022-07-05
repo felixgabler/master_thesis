@@ -8,6 +8,7 @@ import os
 from datetime import datetime
 import glob
 
+from disorder_data_module import DisorderDataModule
 from disorder_language_model import DisorderPredictor
 
 # Silence the warnings about transformers not loading correctly (i.e. decoder missing)
@@ -37,18 +38,15 @@ parser.add_argument(
     help="The best k models according to the quantity monitored will be saved.",
 )
 
-# Batching
-parser.add_argument(
-    "--batch_size", default=1, type=int, help="Batch size to be used."
-)
-
-# add model specific args
+# add model and data module specific args
 parser = DisorderPredictor.add_model_specific_args(parser)
+parser = DisorderDataModule.add_data_specific_args(parser)
 # add all the available trainer options to argparse
 parser = Trainer.add_argparse_args(parser)
 
 args = parser.parse_args()
 
+dm = DisorderDataModule(args)
 model = DisorderPredictor(args)
 
 logger = TensorBoardLogger(
@@ -86,7 +84,7 @@ trainer = Trainer.from_argparse_args(
     callbacks=[checkpoint_callback, early_stop_callback],
 )
 
-trainer.fit(model)
+trainer.fit(model, dm)
 
 best_checkpoint_path = glob.glob(ckpt_path + "/*")[0]
 print(f"Best checkpoint: {best_checkpoint_path}")

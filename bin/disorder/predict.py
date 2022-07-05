@@ -3,6 +3,7 @@ from argparse import ArgumentParser
 from pytorch_lightning import Trainer
 from transformers import logging
 
+from disorder_data_module import DisorderDataModule
 from data_utils import load_dataset
 from disorder_language_model import DisorderPredictor
 
@@ -28,23 +29,19 @@ parser.add_argument(
     type=str,
     help="Path to write to. If not provided, write to console",
 )
-parser.add_argument(
-    "--predict_file",
-    default="../data/disprot/flDPnn_Validation_Annotation.txt",
-    type=str,
-    help="Path to the file containing the prediction data.",
-)
 
 # add all the available trainer options to argparse
+parser = DisorderDataModule.add_data_specific_args(parser)
 parser = Trainer.add_argparse_args(parser)
 
 args = parser.parse_args()
 
+dm = DisorderDataModule(args)
 model = DisorderPredictor.load_from_checkpoint(args.checkpoint, hparams_file=args.hparams_file)
 
 trainer = Trainer.from_argparse_args(args)
 
-predictions = trainer.predict(model)
+predictions = trainer.predict(model, dm)
 
 dataset = load_dataset(args.predict_file)
 accessions = dataset['acc']

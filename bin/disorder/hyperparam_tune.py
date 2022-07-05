@@ -8,6 +8,7 @@ from transformers import logging
 
 from argparse import ArgumentParser, Namespace
 
+from disorder_data_module import DisorderDataModule
 from disorder_language_model import DisorderPredictor
 
 parser = ArgumentParser()
@@ -34,13 +35,9 @@ parser.add_argument(
     help="The best k models according to the quantity monitored will be saved.",
 )
 
-# Batching
-parser.add_argument(
-    "--batch_size", default=1, type=int, help="Batch size to be used."
-)
-
-# add model specific args
+# add model and data module specific args
 parser = DisorderPredictor.add_model_specific_args(parser)
+parser = DisorderDataModule.add_data_specific_args(parser)
 # add all the available trainer options to argparse
 parser = Trainer.add_argparse_args(parser)
 
@@ -82,8 +79,10 @@ def train_prottrans(c):
     args_dict.update(c)
     if args_dict['model_name'] == 'facebook/esm-1b':
         args_dict['max_length'] = 1024
-    model = DisorderPredictor(Namespace(**args_dict))
-    trainer.fit(model)
+    params = Namespace(**args_dict)
+    dm = DisorderDataModule(params)
+    model = DisorderPredictor(params)
+    trainer.fit(model, dm)
 
 
 trainable = tune.with_parameters(train_prottrans)
