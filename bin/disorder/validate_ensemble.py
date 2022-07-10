@@ -9,7 +9,7 @@ from ensemble_model import EnsembleDisorderPredictor
 # Silence the warnings about transformers not loading correctly (i.e. decoder missing)
 logging.set_verbosity_error()
 
-parser = ArgumentParser()
+parser = ArgumentParser(conflict_handler='resolve')
 
 # add all the available trainer options to argparse
 parser = Trainer.add_argparse_args(parser)

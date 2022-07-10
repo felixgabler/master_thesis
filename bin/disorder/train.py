@@ -1,12 +1,12 @@
-from pytorch_lightning.loggers import TensorBoardLogger
-from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
-from pytorch_lightning import Trainer
-from transformers import logging
-
-from argparse import ArgumentParser
-import os
-from datetime import datetime
 import glob
+import os
+from argparse import ArgumentParser
+from datetime import datetime
+
+from pytorch_lightning import Trainer
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
+from pytorch_lightning.loggers import TensorBoardLogger
+from transformers import logging
 
 from disorder_data_module import DisorderDataModule
 from disorder_language_model import DisorderPredictor
@@ -14,7 +14,7 @@ from disorder_language_model import DisorderPredictor
 # Silence the warnings about transformers not loading correctly (i.e. decoder missing)
 logging.set_verbosity_error()
 
-parser = ArgumentParser()
+parser = ArgumentParser(conflict_handler='resolve')
 
 # Checkpointing and Early Stopping
 parser.add_argument("--monitor", default="val_acc", type=str, help="Quantity to monitor.")

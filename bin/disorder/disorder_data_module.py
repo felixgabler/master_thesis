@@ -122,6 +122,12 @@ class DisorderDataModule(LightningDataModule):
         """
         parser = parent_parser.add_argument_group("DisorderDataModule")
         parser.add_argument(
+            "--model_name",
+            default="Rostlab/prot_t5_xl_half_uniref50-enc",
+            type=str,
+            help="Language model to use as embedding encoder (ProtTrans or ESM)",
+        )
+        parser.add_argument(
             "--batch_size",
             default=1,
             type=int,

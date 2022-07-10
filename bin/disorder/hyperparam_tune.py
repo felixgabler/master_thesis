@@ -1,17 +1,15 @@
+from argparse import ArgumentParser, Namespace
+
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import EarlyStopping
-
 from ray import tune
 from ray.tune.integration.pytorch_lightning import TuneReportCallback
-
 from transformers import logging
-
-from argparse import ArgumentParser, Namespace
 
 from disorder_data_module import DisorderDataModule
 from disorder_language_model import DisorderPredictor
 
-parser = ArgumentParser()
+parser = ArgumentParser(conflict_handler='resolve')
 
 # Checkpointing and Early Stopping
 parser.add_argument("--monitor", default="val_acc", type=str, help="Quantity to monitor.")
