@@ -68,12 +68,14 @@ class DisorderDataModule(LightningDataModule):
             padded_sequences_labels = pad_sequence(labels, batch_first=True)
             return inputs, unpadded, padded_sequences_labels[:-1]
         except RuntimeError:
-            print(label)
-            raise Exception("Label encoder found an unknown label.")
+            raise Exception(f"Label encoder found unknown label: {label}")
 
     def train_dataloader(self) -> DataLoader:
         """ Function that loads the train set. """
-        train_dataset = load_dataset(self.hparams.train_file, self.hparams.max_length)
+        train_dataset = load_dataset(self.hparams.train_file,
+                                     self.hparams.max_length,
+                                     self.hparams.skip_first_lines,
+                                     self.hparams.lines_per_entry)
         return DataLoader(
             dataset=train_dataset,
             sampler=RandomSampler(train_dataset),
@@ -84,7 +86,10 @@ class DisorderDataModule(LightningDataModule):
 
     def val_dataloader(self) -> DataLoader:
         """ Function that loads the validation set. """
-        dev_dataset = load_dataset(self.hparams.val_file, self.hparams.max_length)
+        dev_dataset = load_dataset(self.hparams.val_file,
+                                   self.hparams.max_length,
+                                   self.hparams.skip_first_lines,
+                                   self.hparams.lines_per_entry)
         return DataLoader(
             dataset=dev_dataset,
             batch_size=self.hparams.batch_size,
@@ -94,8 +99,10 @@ class DisorderDataModule(LightningDataModule):
 
     def test_dataloader(self) -> DataLoader:
         """ Function that loads the validation set. """
-        test_dataset = load_dataset('/u/fgabler/master_thesis/data/disprot/disprot-disorder-2022.txt',
-                                    self.hparams.max_length, 0, 3)
+        test_dataset = load_dataset(self.hparams.test_file,
+                                    self.hparams.max_length,
+                                    self.hparams.skip_first_lines,
+                                    self.hparams.lines_per_entry)
         return DataLoader(
             dataset=test_dataset,
             batch_size=self.hparams.batch_size,
@@ -105,7 +112,10 @@ class DisorderDataModule(LightningDataModule):
 
     def predict_dataloader(self) -> DataLoader:
         """ Function that loads the prediction set. """
-        predict_dataset = load_dataset(self.hparams.predict_file, self.hparams.max_length)
+        predict_dataset = load_dataset(self.hparams.predict_file,
+                                       self.hparams.max_length,
+                                       self.hparams.skip_first_lines,
+                                       self.hparams.lines_per_entry)
         return DataLoader(
             dataset=predict_dataset,
             batch_size=self.hparams.batch_size,
@@ -147,13 +157,13 @@ class DisorderDataModule(LightningDataModule):
         )
         parser.add_argument(
             "--skip_first_lines",
-            default=10,
+            default=0,
             type=int,
             help="Number of lines to skip in the data file.",
         )
         parser.add_argument(
             "--lines_per_entry",
-            default=7,
+            default=3,
             type=int,
             help="How many lines each entry in the data file has.",
         )

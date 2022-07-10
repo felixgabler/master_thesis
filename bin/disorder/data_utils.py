@@ -91,7 +91,7 @@ class NLPDataset(Dataset):
         return NLPDataset(self.rows + other.rows)
 
 
-def load_dataset(path, max_length=1536, skip_first=10, lines_per_entry=7):
+def load_dataset(path, max_length=1536, skip_first=0, lines_per_entry=3):
     items = []
     with open(path) as file_handler:
         i = -1
