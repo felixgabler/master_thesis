@@ -8,8 +8,8 @@ from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 from transformers import logging
 
-from disorder_data_module import DisorderDataModule
-from disorder_language_model import DisorderPredictor
+from disprot_data_module import DisprotDataModule
+from binary_disorder_classifier import BinaryDisorderClassifier
 
 # Silence the warnings about transformers not loading correctly (i.e. decoder missing)
 logging.set_verbosity_error()
@@ -17,7 +17,7 @@ logging.set_verbosity_error()
 parser = ArgumentParser(conflict_handler='resolve')
 
 # Checkpointing and Early Stopping
-parser.add_argument("--monitor", default="val_acc", type=str, help="Quantity to monitor.")
+parser.add_argument("--monitor", default="val_bac", type=str, help="Quantity to monitor.")
 parser.add_argument(
     "--metric_mode",
     default="max",
@@ -39,15 +39,15 @@ parser.add_argument(
 )
 
 # add model and data module specific args
-parser = DisorderPredictor.add_model_specific_args(parser)
-parser = DisorderDataModule.add_data_specific_args(parser)
+parser = BinaryDisorderClassifier.add_model_specific_args(parser)
+parser = DisprotDataModule.add_data_specific_args(parser)
 # add all the available trainer options to argparse
 parser = Trainer.add_argparse_args(parser)
 
 args = parser.parse_args()
 
-dm = DisorderDataModule(args)
-model = DisorderPredictor(args)
+dm = DisprotDataModule(args)
+model = BinaryDisorderClassifier(args)
 
 logger = TensorBoardLogger(
     save_dir="../logs/",

@@ -2,10 +2,10 @@ from argparse import ArgumentParser
 
 import torch
 
-from disorder_language_model import DisorderPredictor
+from binary_disorder_classifier import BinaryDisorderClassifier
 
 
-class EnsembleDisorderPredictor(DisorderPredictor):
+class EnsembleDisorderPredictor(BinaryDisorderClassifier):
     """
     Runs multiple DisorderPredictor models and combines their predictions by majority vote
 
@@ -15,7 +15,7 @@ class EnsembleDisorderPredictor(DisorderPredictor):
     def build_model(self) -> None:
         self.models = []
         for checkpoint in self.hparams.checkpoints[0]:
-            self.models.append(DisorderPredictor.load_from_checkpoint(checkpoint))
+            self.models.append(BinaryDisorderClassifier.load_from_checkpoint(checkpoint))
 
     def forward(self, inputs):
         """ Usual pytorch forward function.
@@ -77,7 +77,7 @@ class EnsembleDisorderPredictor(DisorderPredictor):
         Returns:
             - updated parser
         """
-        parent_parser = DisorderPredictor.add_model_specific_args(parent_parser)
+        parent_parser = BinaryDisorderClassifier.add_model_specific_args(parent_parser)
         parser = parent_parser.add_argument_group("EnsembleDisorderPredictor")
         parser.add_argument(
             "--checkpoints",

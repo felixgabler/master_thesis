@@ -6,8 +6,8 @@ from ray import tune
 from ray.tune.integration.pytorch_lightning import TuneReportCallback
 from transformers import logging
 
-from disorder_data_module import DisorderDataModule
-from disorder_language_model import DisorderPredictor
+from disprot_data_module import DisprotDataModule
+from binary_disorder_classifier import BinaryDisorderClassifier
 
 parser = ArgumentParser(conflict_handler='resolve')
 
@@ -34,8 +34,8 @@ parser.add_argument(
 )
 
 # add model and data module specific args
-parser = DisorderPredictor.add_model_specific_args(parser)
-parser = DisorderDataModule.add_data_specific_args(parser)
+parser = BinaryDisorderClassifier.add_model_specific_args(parser)
+parser = DisprotDataModule.add_data_specific_args(parser)
 # add all the available trainer options to argparse
 parser = Trainer.add_argparse_args(parser)
 
@@ -78,8 +78,8 @@ def train_prottrans(c):
     if args_dict['model_name'] == 'facebook/esm-1b':
         args_dict['max_length'] = 1024
     params = Namespace(**args_dict)
-    dm = DisorderDataModule(params)
-    model = DisorderPredictor(params)
+    dm = DisprotDataModule(params)
+    model = BinaryDisorderClassifier(params)
     trainer.fit(model, dm)
 
 

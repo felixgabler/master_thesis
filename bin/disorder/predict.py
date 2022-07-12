@@ -3,9 +3,9 @@ from argparse import ArgumentParser
 from pytorch_lightning import Trainer
 from transformers import logging
 
-from disorder_data_module import DisorderDataModule
-from data_utils import load_dataset
-from disorder_language_model import DisorderPredictor
+from disprot_data_module import DisprotDataModule
+from data_utils import load_disprot_dataset
+from binary_disorder_classifier import BinaryDisorderClassifier
 
 # Silence the warnings about transformers not loading correctly (i.e. decoder missing)
 logging.set_verbosity_error()
@@ -31,19 +31,19 @@ parser.add_argument(
 )
 
 # add all the available trainer options to argparse
-parser = DisorderDataModule.add_data_specific_args(parser)
+parser = DisprotDataModule.add_data_specific_args(parser)
 parser = Trainer.add_argparse_args(parser)
 
 args = parser.parse_args()
 
-dm = DisorderDataModule(args)
-model = DisorderPredictor.load_from_checkpoint(args.checkpoint, hparams_file=args.hparams_file)
+dm = DisprotDataModule(args)
+model = BinaryDisorderClassifier.load_from_checkpoint(args.checkpoint, hparams_file=args.hparams_file)
 
 trainer = Trainer.from_argparse_args(args)
 
 predictions = trainer.predict(model, dm)
 
-dataset = load_dataset(args.predict_file)
+dataset = load_disprot_dataset(args.predict_file)
 accessions = dataset['acc']
 
 out_file = open(args.out_file, 'w') if args.out_file is not None else None

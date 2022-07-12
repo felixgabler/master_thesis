@@ -12,9 +12,9 @@ from torchmetrics import Accuracy, F1Score, MatthewsCorrCoef
 from transformers import AlbertModel, BertModel, ESMModel, T5EncoderModel, XLNetModel
 
 
-class DisorderPredictor(LightningModule):
+class BinaryDisorderClassifier(LightningModule):
     """
-    ProtTrans model to predict intrinsic disorder in sequences.
+    pLM-based model to predict binary intrinsic disorder for sequences.
 
     :param params: parsed hyperparameters from ArgumentParser
     """

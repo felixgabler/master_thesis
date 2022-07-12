@@ -8,10 +8,10 @@ from torchnlp.encoders import LabelEncoder
 from torchnlp.utils import collate_tensors
 from transformers import AlbertTokenizer, BertTokenizer, ESMTokenizer, T5Tokenizer, XLNetTokenizer
 
-from data_utils import load_dataset
+from data_utils import load_disprot_dataset
 
 
-class DisorderDataModule(LightningDataModule):
+class DisprotDataModule(LightningDataModule):
     def __init__(self, params) -> None:
         super().__init__()
         # https://pytorch-lightning.readthedocs.io/en/stable/common/hyperparameters.html#lightningmodule-hyperparameters
@@ -35,10 +35,9 @@ class DisorderDataModule(LightningDataModule):
         # Label Encoder
         self.label_encoder = LabelEncoder(self.hparams.label_set.split(","), reserved_labels=[], unknown_index=None)
 
-    def prepare_sample(self, sample: list, prepare_target: bool = True) -> (dict, dict):
+    def prepare_sample(self, sample: list) -> (dict, dict):
         """
         Function that prepares a sample to input the model.
-        :param prepare_target: also load label
         :param sample: list of dictionaries.
 
         Returns:
@@ -57,12 +56,9 @@ class DisorderDataModule(LightningDataModule):
                                 return_tensors='pt',
                                 max_length=self.hparams.max_length)
 
-        if not prepare_target:
-            return inputs, {}
-
-        # Prepare target:
         try:
-            labels = [self.label_encoder.batch_encode(l) for l in label]
+            # Prepare target:
+            labels = [self.label_encoder.batch_encode(lab) for lab in label]
             unpadded = torch.cat(labels).unsqueeze(0)
             labels.append(torch.empty(self.hparams.max_length))
             padded_sequences_labels = pad_sequence(labels, batch_first=True)
@@ -72,10 +68,10 @@ class DisorderDataModule(LightningDataModule):
 
     def train_dataloader(self) -> DataLoader:
         """ Function that loads the train set. """
-        train_dataset = load_dataset(self.hparams.train_file,
-                                     self.hparams.max_length,
-                                     self.hparams.skip_first_lines,
-                                     self.hparams.lines_per_entry)
+        train_dataset = load_disprot_dataset(self.hparams.train_file,
+                                             self.hparams.max_length,
+                                             self.hparams.skip_first_lines,
+                                             self.hparams.lines_per_entry)
         return DataLoader(
             dataset=train_dataset,
             sampler=RandomSampler(train_dataset),
@@ -86,10 +82,10 @@ class DisorderDataModule(LightningDataModule):
 
     def val_dataloader(self) -> DataLoader:
         """ Function that loads the validation set. """
-        dev_dataset = load_dataset(self.hparams.val_file,
-                                   self.hparams.max_length,
-                                   self.hparams.skip_first_lines,
-                                   self.hparams.lines_per_entry)
+        dev_dataset = load_disprot_dataset(self.hparams.val_file,
+                                           self.hparams.max_length,
+                                           self.hparams.skip_first_lines,
+                                           self.hparams.lines_per_entry)
         return DataLoader(
             dataset=dev_dataset,
             batch_size=self.hparams.batch_size,
@@ -99,10 +95,10 @@ class DisorderDataModule(LightningDataModule):
 
     def test_dataloader(self) -> DataLoader:
         """ Function that loads the validation set. """
-        test_dataset = load_dataset(self.hparams.test_file,
-                                    self.hparams.max_length,
-                                    self.hparams.skip_first_lines,
-                                    self.hparams.lines_per_entry)
+        test_dataset = load_disprot_dataset(self.hparams.test_file,
+                                            self.hparams.max_length,
+                                            self.hparams.skip_first_lines,
+                                            self.hparams.lines_per_entry)
         return DataLoader(
             dataset=test_dataset,
             batch_size=self.hparams.batch_size,
@@ -112,10 +108,10 @@ class DisorderDataModule(LightningDataModule):
 
     def predict_dataloader(self) -> DataLoader:
         """ Function that loads the prediction set. """
-        predict_dataset = load_dataset(self.hparams.predict_file,
-                                       self.hparams.max_length,
-                                       self.hparams.skip_first_lines,
-                                       self.hparams.lines_per_entry)
+        predict_dataset = load_disprot_dataset(self.hparams.predict_file,
+                                               self.hparams.max_length,
+                                               self.hparams.skip_first_lines,
+                                               self.hparams.lines_per_entry)
         return DataLoader(
             dataset=predict_dataset,
             batch_size=self.hparams.batch_size,
