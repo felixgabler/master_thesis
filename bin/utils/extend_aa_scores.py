@@ -1,14 +1,15 @@
 import glob
 import re
+from os.path import exists
 from urllib.request import urlopen
 
 import pandas as pd
+from aiohttp import ClientSession
 from pqdm.threads import pqdm
 from tqdm.auto import tqdm
-from os.path import exists
 
 
-def read_seq(fasta_file):
+def read_seq(fasta_file: str):
     _seq = ""
     with open(fasta_file) as file_handler:
         for _line in file_handler:
@@ -16,6 +17,23 @@ def read_seq(fasta_file):
                 continue
             _seq += _line.strip()
     return _seq
+
+
+def read_fasta_seqs(fasta_file: str):
+    _seqs = []
+    _seq = {"seq": ""}
+    with open(fasta_file) as handle:
+        for line in handle:
+            if line.startswith('>'):
+                if "acc" in _seq:
+                    _seqs.append(_seq)
+                    _seq = {"seq": ""}
+                _seq["acc"] = line.strip()
+            elif len(line.strip()) > 0:
+                _seq["seq"] += line.strip()
+    if "acc" in _seq:
+        _seqs.append(_seq)
+    return _seqs
 
 
 def get_sequence_from_file(sequences_folder: str, uniprot_id: str):
@@ -35,6 +53,17 @@ def load_sequence_from_uniprot(uniprot_id: str) -> str:
                     res += decoded
     except Exception as e:
         print(f'Failed fetching sequence: {e.message if hasattr(e, "message") else e}')
+        pass
+    return res
+
+
+async def load_sequence_from_uniprot_session(session: ClientSession, uniprot_id: str) -> str:
+    res = ''
+    try:
+        response = await session.get(url=f"https://www.uniprot.org/uniprot/{uniprot_id}.fasta")
+        seq = await response.text()
+        res = ''.join(seq.split('\n')[1:])
+    except:
         pass
     return res
 
