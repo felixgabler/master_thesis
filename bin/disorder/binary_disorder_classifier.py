@@ -247,7 +247,7 @@ class BinaryDisorderClassifier(LightningModule):
         Returns:
             - updated parser
         """
-        parser = parent_parser.add_argument_group("DisorderPredictor")
+        parser = parent_parser.add_argument_group("BinaryDisorderClassifier")
         parser.add_argument(
             "--model_name",
             default="Rostlab/prot_t5_xl_half_uniref50-enc",

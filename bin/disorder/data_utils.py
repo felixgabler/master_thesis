@@ -1,6 +1,7 @@
-from torch.utils.data import Dataset
-
+import glob
 import re
+
+from torch.utils.data import Dataset
 
 
 class NLPDataset(Dataset):
@@ -111,5 +112,28 @@ def load_disprot_dataset(path, max_length=1536, skip_first=0, lines_per_entry=3)
                 if len(item["label"]) <= max_length:
                     items.append(item)
                     item = {}
+
+    return NLPDataset(items)
+
+
+def load_chezod_dataset(glob_path, max_length=1536):
+    items = []
+    for path in glob.glob(glob_path):
+        with open(path) as file_handler:
+            item = {"seq": "", "scores": []}
+            number = '-1'
+            for line in file_handler:
+                parts = line.strip().split()
+                if parts[1] == number:
+                    print(f'Warning: Received same number for two residues in file: {path}')
+                    break
+                number = parts[1]
+
+                item["seq"] += f" {parts[0]}"
+                item["scores"].append(float(parts[2]))
+
+            if len(item["seq"]) <= max_length:
+                item["seq"] = item["seq"].strip()
+                items.append(item)
 
     return NLPDataset(items)
