@@ -65,6 +65,7 @@ class DisprotDataModule(LightningDataModule):
             labels = [self.label_encoder.batch_encode(lab) for lab in label]
             unpadded = torch.cat(labels).unsqueeze(0)
             labels.append(torch.empty(self.hparams.max_length))
+            # We pad with 0 but when computing the metrics and loss, the padding will already be removed or a mask is used
             padded_sequences_labels = pad_sequence(labels, batch_first=True)
             return inputs, unpadded, padded_sequences_labels[:-1]
         except RuntimeError:
@@ -138,7 +139,7 @@ class DisprotDataModule(LightningDataModule):
             help="Language model to use as embedding encoder (ProtTrans or ESM)",
         )
         parser.add_argument(
-            "--batch_size",
+            "--batch_size",  # WARNING: LOOK AT forward FUNCTION OF BINARY DISORDER CLASSIFIER BEFORE CHANGING
             default=1,
             type=int,
             help="Batch size to be used."

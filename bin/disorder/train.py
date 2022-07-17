@@ -17,7 +17,7 @@ logging.set_verbosity_error()
 parser = ArgumentParser(conflict_handler='resolve')
 
 # Checkpointing and Early Stopping
-parser.add_argument("--monitor", default="val_bac", type=str, help="Quantity to monitor.")
+parser.add_argument("--monitor", default="val_mcc", type=str, help="Quantity to monitor.")
 parser.add_argument(
     "--metric_mode",
     default="max",
@@ -33,7 +33,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--save_top_k",
-    default=1,
+    default=3,
     type=int,
     help="The best k models according to the quantity monitored will be saved.",
 )
@@ -86,5 +86,5 @@ trainer = Trainer.from_argparse_args(
 
 trainer.fit(model, dm)
 
-best_checkpoint_path = glob.glob(ckpt_path + "/*")[0]
-print(f"Best checkpoint: {best_checkpoint_path}")
+best_checkpoints_paths = glob.glob(ckpt_path + "/*")
+print(f"Best checkpoints: {best_checkpoints_paths}")

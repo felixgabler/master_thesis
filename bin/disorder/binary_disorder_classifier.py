@@ -25,12 +25,12 @@ class BinaryDisorderClassifier(LightningModule):
         self.save_hyperparameters(params)
 
         self.num_classes = len(self.hparams.label_set.split(","))
-        # The -100 is not necessary with CRF since it will return the unpadded anyways
-        # Removed from F1 due to IndexError: index -100 is out of bounds for dimension 1 with size 2
-        self.metric_acc = Accuracy(num_classes=self.num_classes, ignore_index=-100)
+        # We do not use ignore index because by the time we use the metrics, the predictions will already be unpadded
+        self.metric_acc = Accuracy(num_classes=self.num_classes, multiclass=True)
         # behaves like sklearn.metrics.balanced_accuracy_score
-        self.metric_bac = Accuracy(num_classes=self.num_classes, average='macro', ignore_index=-100)
-        self.metric_f1 = F1Score(num_classes=self.num_classes, average='macro', mdmc_average='samplewise')
+        self.metric_bac = Accuracy(num_classes=self.num_classes, average='macro', multiclass=True)
+        self.metric_f1 = F1Score(num_classes=self.num_classes, average='macro', mdmc_average='samplewise',
+                                 multiclass=True)
         self.metric_mcc = MatthewsCorrCoef(num_classes=self.num_classes)
 
         self.build_model()
@@ -59,24 +59,28 @@ class BinaryDisorderClassifier(LightningModule):
         else:
             self._frozen = False
 
-        hidden_features = self.hparams.hidden_features
+        if self.hparams.architecture == 'rnn_crf':
+            hidden_features = self.hparams.hidden_features
+            RNN = nn.LSTM if self.hparams.rnn == 'lstm' else nn.GRU
+            # https://pytorch.org/tutorials/beginner/nlp/sequence_models_tutorial.html
+            # https://www.dotlayer.org/en/training-rnn-using-pytorch/
+            self.lstm = RNN(
+                input_size=self.LM.config.hidden_size,
+                hidden_size=hidden_features,
+                num_layers=self.hparams.rnn_layers,
+                bidirectional=self.hparams.bidirectional_rnn,
+                batch_first=True,
+            )
 
-        RNN = nn.LSTM if self.hparams.rnn == 'lstm' else nn.GRU
-        # https://pytorch.org/tutorials/beginner/nlp/sequence_models_tutorial.html
-        # https://www.dotlayer.org/en/training-rnn-using-pytorch/
-        self.lstm = RNN(
-            input_size=self.LM.config.hidden_size,
-            hidden_size=hidden_features,
-            num_layers=self.hparams.rnn_layers,
-            bidirectional=self.hparams.bidirectional_rnn,
-            batch_first=True,
-        )
+            rnn_out = 2 * hidden_features if self.hparams.bidirectional_rnn else hidden_features
 
-        rnn_out = 2 * hidden_features if self.hparams.bidirectional_rnn else hidden_features
+            self.hidden1 = nn.Linear(rnn_out, hidden_features)
 
-        self.hidden1 = nn.Linear(rnn_out, hidden_features)
+            self.crf = CRF(hidden_features, self.num_classes)
 
-        self.crf = CRF(hidden_features, self.num_classes)
+        elif self.hparams.architecture == 'cnn':
+            # We want the CNN to return logits for BCEWithLogitsLoss
+            self.cnn = SETH_CNN(1, self.LM.config.hidden_size)
 
     def __build_features(self, input_ids, attention_mask, length):
         """
@@ -109,27 +113,48 @@ class BinaryDisorderClassifier(LightningModule):
         """ Usual pytorch forward function.
         input ids is already padded
         Returns:
-            model outputs
+            model outputs (unpadded, important for metrics since they can't handle padding)
         """
-        # Get the emission scores from the BiLSTM
-        x, attention_mask = self.__build_features(input_ids, attention_mask, length)
-        _, tag_seq = self.crf(x, attention_mask)  # ignore the scores
-        tag_seq = torch.tensor(tag_seq, device=self.device)
-        return tag_seq
+        if self.hparams.architecture == 'rnn_crf':
+            # Get the emission scores from the BiLSTM
+            x, attention_mask = self.__build_features(input_ids, attention_mask, length)
+            _, tag_seq = self.crf(x, attention_mask)  # ignore the scores
+            tag_seq = torch.tensor(tag_seq, device=self.device)
+            return tag_seq
 
-    def loss(self, xs: torch.tensor, attention_mask, length, targets: torch.tensor) -> torch.tensor:
+        elif self.hparams.architecture == 'cnn':
+            padded_word_embeddings = self.LM(input_ids, attention_mask)[0]
+            # We need to make preds and target have same dimension for loss and metrics
+            scores = self.cnn(padded_word_embeddings).squeeze(dim=1)
+            # WARNING: This will break if the batch size becomes larger than 1 !!!!
+            scores_unpadded = scores[:, :length[0]]
+            return scores_unpadded
+
+    def loss(self, xs: torch.tensor, attention_mask, length, padded_targets: torch.tensor, targets: torch.tensor,
+             preds=None) -> torch.tensor:
         """
         Computes Loss value according to a loss function.
         :param xs: a tensor [batch_size x max_length] with data input
         :param attention_mask: Attention mask [batch_size x max_length]
         :param length: length of the sequences in this batch [batch_size]
-        :param targets: Label values [batch_size]
+        :param padded_targets: Label values with padding [batch_size x max_length]
+        :param targets: Label values without padding [batch_size x individual_length]
+        :param preds: potentially precomputed predictions (CRF does not need them for training)
+                        [batch_size x num_classes x individual_length]
         Returns:
             torch.tensor with loss value.
         """
-        features, masks = self.__build_features(xs, attention_mask, length)
-        loss = self.crf.loss(features, targets, masks=masks)
-        return loss
+        if self.hparams.architecture == 'rnn_crf':
+            features, masks = self.__build_features(xs, attention_mask, length)
+            loss = self.crf.loss(features, padded_targets, masks=masks)
+            return loss
+
+        elif self.hparams.architecture == 'cnn':
+            preds = preds if preds is not None else self.forward(xs, attention_mask, length)
+            # We need to make preds and target have same dimension,
+            # cast targets to float, and also ignore the padded values
+            loss = F.binary_cross_entropy_with_logits(preds, targets.float())
+            return loss
 
     def training_step(self, batch: tuple, batch_nb: int, *args, **kwargs) -> dict:
         """
@@ -146,23 +171,15 @@ class BinaryDisorderClassifier(LightningModule):
         padded_targets = padded_targets.to(self.device)
 
         # seqs = self.forward(**inputs)
-        loss = self.loss(inputs['input_ids'], inputs['attention_mask'], inputs['length'], padded_targets)
+        loss = self.loss(inputs['input_ids'], inputs['attention_mask'], inputs['length'], padded_targets, targets)
         return {'loss': loss}
 
     def validation_step(self, batch: tuple, batch_nb: int, *args, **kwargs):
         """ Similar to the training step but with the model in eval mode.
         Returns:
-            - dictionary passed to the validation_end function.
+            - dictionary passed to the validation_step_end function.
         """
-        inputs, targets, padded_y = batch
-        inputs = inputs.to(self.device)
-        targets = targets.to(self.device)
-        padded_y = padded_y.to(self.device)
-
-        preds = self.forward(**inputs)
-        # y_hat = torch.argmax(model_out, dim=1)
-        loss = self.loss(inputs['input_ids'], inputs['attention_mask'], inputs['length'], padded_y)
-        return {'loss': loss, 'targets': targets, 'preds': preds}
+        return self._evaluate(batch)
 
     def validation_step_end(self, outputs):
         self._log_metrics(outputs, 'val')
@@ -170,23 +187,38 @@ class BinaryDisorderClassifier(LightningModule):
     def test_step(self, batch: tuple, batch_nb: int, *args, **kwargs):
         """ Similar to the training step but with the model in eval mode.
         Returns:
-            - dictionary passed to the validation_end function.
+            - dictionary passed to the test_step_end function.
         """
-        inputs, targets, padded_y = batch
-        inputs = inputs.to(self.device)
-        targets = targets.to(self.device)
-
-        preds = self.forward(**inputs)
-        # preds = torch.argmax(model_out, dim=1)
-        loss = self.loss(inputs['input_ids'], inputs['attention_mask'], inputs['length'], padded_y)
-
-        return {'loss': loss, 'targets': targets, 'preds': preds}
+        return self._evaluate(batch)
 
     def test_step_end(self, outputs):
         self._log_metrics(outputs, 'test')
 
+    def _evaluate(self, batch: tuple):
+        inputs, targets, padded_targets = batch
+        inputs = inputs.to(self.device)
+        targets = targets.to(self.device)
+        padded_targets = padded_targets.to(self.device)
+
+        preds = self.forward(**inputs)
+        # y_hat = torch.argmax(model_out, dim=1)
+        loss = self.loss(inputs['input_ids'], inputs['attention_mask'], inputs['length'], padded_targets, targets,
+                         preds)
+        return {'loss': loss, 'targets': targets, 'preds': preds}
+
     def _log_metrics(self, outputs, prefix):
         preds, targets = outputs['preds'], outputs['targets']
+        # tp, fp, tn, fn, _ = stat_scores(preds, targets)
+        # sensitivity = recall = tp / (tp + fn)
+        # specificity = tn / (tn + fp)
+        # precision = tp / (tp + fp)
+        # our_acc = (tp + tn) / (tp + fp + tn + fn)
+        # our_bac = (sensitivity + specificity) / 2
+        # our_f1 = 2 * (precision * recall) / (precision + recall)
+        # our_mcc = (tn * tp - fp * fn) / np.sqrt((tn + fn) * (fp + tp) * (tn + fp) * (fn + tp))
+        # WARNING: THIS WOULD NOT WORK WITH BATCH SIZE LARGER 1 !!!
+        preds = preds[0]
+        targets = targets[0]
         self.metric_acc(preds, targets)
         self.metric_bac(preds, targets)
         self.metric_f1(preds, targets)
@@ -201,19 +233,27 @@ class BinaryDisorderClassifier(LightningModule):
         inputs, y, padded_y = batch
         inputs = inputs.to(self.device)
         return self.forward(**inputs)
-        # torch.argmax(model_out, dim=1)
+        # TODO: for other architectures that do not return binary scores: torch.argmax(model_out, dim=1)
 
     def configure_optimizers(self):
         """ Sets different Learning rates for different parameter groups. """
         parameters = [
-            {"params": self.crf.parameters()},
-            {"params": self.hidden1.parameters()},
-            {"params": self.lstm.parameters()},
             {
                 "params": self.LM.parameters(),
                 "lr": self.hparams.encoder_learning_rate,
             },
         ]
+        if self.hparams.architecture == 'rnn_crf':
+            parameters += [
+                {"params": self.crf.parameters()},
+                {"params": self.hidden1.parameters()},
+                {"params": self.lstm.parameters()},
+            ]
+        elif self.hparams.architecture == 'cnn':
+            parameters += [
+                {"params": self.cnn.parameters()},
+            ]
+
         if self.hparams.strategy is not None and self.hparams.strategy.endswith('_offload'):
             return DeepSpeedCPUAdam(parameters, lr=self.hparams.learning_rate)
         elif self.hparams.strategy == 'deepspeed_stage_3':
@@ -253,6 +293,13 @@ class BinaryDisorderClassifier(LightningModule):
             default="Rostlab/prot_t5_xl_half_uniref50-enc",
             type=str,
             help="Language model to use as embedding encoder (ProtTrans or ESM)",
+        )
+        parser.add_argument(
+            "--architecture",
+            default="rnn_crf",
+            type=str,
+            help="Architecture to use after embedding",
+            choices=['rnn_crf', 'cnn']
         )
         parser.add_argument(
             "--rnn",
@@ -318,3 +365,32 @@ class BinaryDisorderClassifier(LightningModule):
                 with the gpu memory to store the model. (Does not apply to ESM models)",
         )
         return parent_parser
+
+
+# Taken from https://github.com/DagmarIlz/SETH/blob/main/SETH_1.py
+class SETH_CNN(nn.Module):
+    def __init__(self, n_classes, n_features):
+        super(SETH_CNN, self).__init__()
+        self.n_classes = n_classes
+        bottleneck_dim = 28
+        self.classifier = nn.Sequential(
+            # summarize information from 5 neighbouring amino acids (AAs)
+            # padding: dimension corresponding to AA number does not change
+            nn.Conv2d(n_features, bottleneck_dim, kernel_size=(5, 1), padding=(2, 0)),
+            nn.Tanh(),
+            nn.Conv2d(bottleneck_dim, self.n_classes, kernel_size=(5, 1), padding=(2, 0))
+        )
+
+    def forward(self, x):
+        """
+            L = protein length
+            B = batch-size
+            F = number of features (1024 for embeddings)
+            N = number of output nodes (1 for disorder, since predict one continuous number)
+        """
+        # IN: X = (B x L x F); OUT: (B x F x L x 1)
+        x = x.permute(0, 2, 1).unsqueeze(dim=-1)
+        Yhat = self.classifier(x)  # OUT: Yhat_consurf = (B x N x L x 1)
+        # IN: (B x N x L x 1); OUT: ( B x N x L )
+        Yhat = Yhat.squeeze(dim=-1)
+        return Yhat

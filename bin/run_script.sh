@@ -8,8 +8,8 @@
 
 # Some models: "facebook/esm-1b", "prot_t5_xl_half_uniref50-enc", "prot_t5_xl_uniref50", "prot_bert_bfd" (default)
 
-python disorder/train.py --model_name="Rostlab/prot_bert_bfd" --precision=16 \
-       --accelerator="auto" --devices="auto" --strategy="dp" --max_epochs=100 --loader_workers=4 \
+python disorder/train.py --architecture="rnn_crf" --model_name="Rostlab/prot_bert_bfd" --precision=16 \
+       --accelerator="gpu" --devices="1" --max_epochs=100 --loader_workers=4 \
        &> metrics_out
 
 #python disorder/predict.py --checkpoint="logs/lightning_logs/version_04-06-2022--12-29-18/checkpoints/epoch=0-val_loss=93.68-val_acc=0.75-val_f1=0.00.ckpt" \
