@@ -19,7 +19,7 @@ class DisprotDataModule(LightningDataModule):
     def __init__(self, params) -> None:
         super().__init__()
         # https://pytorch-lightning.readthedocs.io/en/stable/common/hyperparameters.html#lightningmodule-hyperparameters
-        self.save_hyperparameters(params)
+        self.hparams.update(vars(params))
 
         model_name = self.hparams.model_name
         """ Tokenizer and label encoder are needed for prepare_sample """

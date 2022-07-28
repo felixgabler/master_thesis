@@ -26,11 +26,17 @@ class BinaryDisorderClassifier(LightningModule):
 
         self.num_classes = len(self.hparams.label_set.split(","))
         # We do not use ignore index because by the time we use the metrics, the predictions will already be unpadded
+        # We have to set multiclass because we want to transform binary data to multi class format.
         self.metric_acc = Accuracy(num_classes=self.num_classes, multiclass=True)
-        # behaves like sklearn.metrics.balanced_accuracy_score
+        # Behaves like sklearn.metrics.balanced_accuracy_score
         self.metric_bac = Accuracy(num_classes=self.num_classes, average='macro', multiclass=True)
-        self.metric_f1 = F1Score(num_classes=self.num_classes, average='macro', mdmc_average='samplewise',
-                                 multiclass=True)
+        # We only want to see the f1 score with regard to misclassifying disorder. Will therefore extract the second dim
+        # https://github.com/Lightning-AI/metrics/issues/629
+        self.metric_f1 = F1Score(
+            num_classes=self.num_classes,
+            average='none',
+            multiclass=True
+        )
         self.metric_mcc = MatthewsCorrCoef(num_classes=self.num_classes)
 
         self.build_model()
@@ -82,6 +88,9 @@ class BinaryDisorderClassifier(LightningModule):
             # We want the CNN to return logits for BCEWithLogitsLoss
             self.cnn = SETH_CNN(1, self.LM.config.hidden_size)
 
+        elif self.hparams.architecture == 'linear':
+            self.lin1 = nn.Linear(self.LM.config.hidden_size, 1)
+
     def __build_features(self, input_ids, attention_mask, length):
         """
         All inputs will already be tensors on the right device thanks to BatchEncoding.to(device)
@@ -122,10 +131,15 @@ class BinaryDisorderClassifier(LightningModule):
             tag_seq = torch.tensor(tag_seq, device=self.device)
             return tag_seq
 
-        elif self.hparams.architecture == 'cnn':
+        elif self.hparams.architecture in ['cnn', 'linear']:
             padded_word_embeddings = self.LM(input_ids, attention_mask)[0]
+
             # We need to make preds and target have same dimension for loss and metrics
-            scores = self.cnn(padded_word_embeddings).squeeze(dim=1)
+            if self.hparams.architecture == 'cnn':
+                scores = self.cnn(padded_word_embeddings).squeeze(dim=1)
+            else:
+                scores = self.lin1(padded_word_embeddings).squeeze(dim=-1)
+
             # WARNING: This will break if the batch size becomes larger than 1 !!!!
             scores_unpadded = scores[:, :length[0]]
             return scores_unpadded
@@ -149,7 +163,7 @@ class BinaryDisorderClassifier(LightningModule):
             loss = self.crf.loss(features, padded_targets, masks=masks)
             return loss
 
-        elif self.hparams.architecture == 'cnn':
+        elif self.hparams.architecture in ['cnn', 'linear']:
             preds = preds if preds is not None else self.forward(xs, attention_mask, length)
             # We need to make preds and target have same dimension,
             # cast targets to float, and also ignore the padded values
@@ -221,19 +235,24 @@ class BinaryDisorderClassifier(LightningModule):
         targets = targets[0]
         self.metric_acc(preds, targets)
         self.metric_bac(preds, targets)
-        self.metric_f1(preds, targets)
+        # The f1 score was very low and should instead behave like binary in sklearn
+        # https://github.com/Lightning-AI/metrics/issues/629
+        f1 = self.metric_f1(preds, targets)[1]
         self.metric_mcc(preds, targets)
         self.log(f'{prefix}_loss', outputs['loss'], batch_size=self.hparams.batch_size)
         self.log(f'{prefix}_acc', self.metric_acc, batch_size=self.hparams.batch_size)
         self.log(f'{prefix}_bac', self.metric_bac, batch_size=self.hparams.batch_size)
-        self.log(f'{prefix}_f1', self.metric_f1, batch_size=self.hparams.batch_size)
+        self.log(f'{prefix}_f1', f1, batch_size=self.hparams.batch_size)
         self.log(f'{prefix}_mcc', self.metric_mcc, batch_size=self.hparams.batch_size)
 
     def predict_step(self, batch, batch_idx: int, *args, **kwargs):
         inputs, y, padded_y = batch
         inputs = inputs.to(self.device)
-        return self.forward(**inputs)
-        # TODO: for other architectures that do not return binary scores: torch.argmax(model_out, dim=1)
+        preds = self.forward(**inputs)
+        if self.hparams.architecture == 'rnn_crf':
+            return preds
+        else:
+            return (preds > 0.5).int()
 
     def configure_optimizers(self):
         """ Sets different Learning rates for different parameter groups. """
@@ -252,6 +271,10 @@ class BinaryDisorderClassifier(LightningModule):
         elif self.hparams.architecture == 'cnn':
             parameters += [
                 {"params": self.cnn.parameters()},
+            ]
+        elif self.hparams.architecture == 'linear':
+            parameters += [
+                {"params": self.lin1.parameters()},
             ]
 
         if self.hparams.strategy is not None and self.hparams.strategy.endswith('_offload'):
@@ -299,7 +322,7 @@ class BinaryDisorderClassifier(LightningModule):
             default="rnn_crf",
             type=str,
             help="Architecture to use after embedding",
-            choices=['rnn_crf', 'cnn']
+            choices=['rnn_crf', 'cnn', 'linear']
         )
         parser.add_argument(
             "--rnn",
