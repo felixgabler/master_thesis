@@ -88,6 +88,18 @@ class BinaryDisorderClassifier(LightningModule):
             # We want the CNN to return logits for BCEWithLogitsLoss
             self.cnn = SETH_CNN(1, self.LM.config.hidden_size)
 
+        elif self.hparams.architecture == 'rnn':
+            hidden_features = self.hparams.hidden_features
+            self.lstm = nn.GRU(
+                input_size=self.LM.config.hidden_size,
+                hidden_size=hidden_features,
+                num_layers=self.hparams.rnn_layers,
+                bidirectional=self.hparams.bidirectional_rnn,
+                batch_first=True,
+            )
+            rnn_out = 2 * hidden_features if self.hparams.bidirectional_rnn else hidden_features
+            self.hidden1 = nn.Linear(rnn_out, 1)
+
         elif self.hparams.architecture == 'linear':
             self.lin1 = nn.Linear(self.LM.config.hidden_size, 1)
 
@@ -131,6 +143,12 @@ class BinaryDisorderClassifier(LightningModule):
             tag_seq = torch.tensor(tag_seq, device=self.device)
             return tag_seq
 
+        elif self.hparams.architecture == 'rnn':
+            # Get the emission scores from the BiLSTM
+            scores, _ = self.__build_features(input_ids, attention_mask, length)
+            scores_unpadded = scores.squeeze(dim=-1)[:, :length[0]]
+            return scores_unpadded
+
         elif self.hparams.architecture in ['cnn', 'linear']:
             padded_word_embeddings = self.LM(input_ids, attention_mask)[0]
 
@@ -163,7 +181,7 @@ class BinaryDisorderClassifier(LightningModule):
             loss = self.crf.loss(features, padded_targets, masks=masks)
             return loss
 
-        elif self.hparams.architecture in ['cnn', 'linear']:
+        elif self.hparams.architecture in ['cnn', 'rnn', 'linear']:
             preds = preds if preds is not None else self.forward(xs, attention_mask, length)
             # We need to make preds and target have same dimension,
             # cast targets to float, and also ignore the padded values
@@ -272,6 +290,11 @@ class BinaryDisorderClassifier(LightningModule):
             parameters += [
                 {"params": self.cnn.parameters()},
             ]
+        elif self.hparams.architecture == 'rnn':
+            parameters += [
+                {"params": self.lstm.parameters()},
+                {"params": self.hidden1.parameters()},
+            ]
         elif self.hparams.architecture == 'linear':
             parameters += [
                 {"params": self.lin1.parameters()},
@@ -322,7 +345,7 @@ class BinaryDisorderClassifier(LightningModule):
             default="rnn_crf",
             type=str,
             help="Architecture to use after embedding",
-            choices=['rnn_crf', 'cnn', 'linear']
+            choices=['rnn_crf', 'cnn', 'rnn', 'linear']
         )
         parser.add_argument(
             "--rnn",
