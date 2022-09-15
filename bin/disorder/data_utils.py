@@ -137,3 +137,29 @@ def load_chezod_dataset(glob_path, max_length=1536):
                 items.append(item)
 
     return NLPDataset(items)
+
+
+def load_chezod_dataset_two_files(seqs_path, scores_path, max_length=1536):
+    """
+    The training data from ODiNPred has a different format with two files.
+    """
+    seqs = []
+    scores = []
+    with open(seqs_path) as seqs_handle:
+        for line in seqs_handle:
+            if line.startswith('>') or len(line.strip()) == 0:
+                continue
+            seq = " ".join(list(re.sub(r"[UZOB]", "X", line.strip())))
+            if len(seq) <= max_length:
+                seqs.append(seq)
+
+    with open(scores_path) as scores_handle:
+        for line in scores_handle:
+            if len(line.strip()) == 0:
+                continue
+            score = line.strip().split(':	')[1].split(', ')
+            if len(score) <= max_length:
+                score = list(map(float, score))
+                scores.append(score)
+
+    return NLPDataset([{"seq": seq, "scores": score} for seq, score in zip(seqs, scores)])

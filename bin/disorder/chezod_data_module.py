@@ -2,12 +2,11 @@ from argparse import ArgumentParser
 
 import torch
 from pytorch_lightning import LightningDataModule
-from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, RandomSampler
 from torchnlp.utils import collate_tensors
 from transformers import AlbertTokenizer, BertTokenizer, ESMTokenizer, T5Tokenizer, XLNetTokenizer
 
-from data_utils import load_chezod_dataset
+from data_utils import load_chezod_dataset, load_chezod_dataset_two_files
 
 
 class CheZODDataModule(LightningDataModule):
@@ -48,7 +47,7 @@ class CheZODDataModule(LightningDataModule):
         seq, scores = sample['seq'], sample['scores']
 
         inputs = self.tokenizer(seq,
-                                # Special tokens not useful for CRF return values
+                                # Special tokens not useful for CRF return values and also make it harder
                                 add_special_tokens=False,
                                 padding='max_length',
                                 return_length=True,
@@ -56,14 +55,15 @@ class CheZODDataModule(LightningDataModule):
                                 return_tensors='pt',
                                 max_length=self.hparams.max_length)
 
-        scores.append(torch.empty(self.hparams.max_length))
-        padded_sequences_labels = pad_sequence(scores, batch_first=True)
-        return inputs, padded_sequences_labels[:-1]
+        scores = torch.tensor(scores).permute(1, 0)
+
+        return inputs, scores
 
     def train_dataloader(self) -> DataLoader:
         """ Function that loads the train set. """
-        train_dataset = load_chezod_dataset(self.hparams.train_files,
-                                            self.hparams.max_length)
+        train_dataset = load_chezod_dataset_two_files(self.hparams.train_seqs_file,
+                                                      self.hparams.train_scores_file,
+                                                      self.hparams.max_length)
         return DataLoader(
             dataset=train_dataset,
             sampler=RandomSampler(train_dataset),
@@ -74,10 +74,11 @@ class CheZODDataModule(LightningDataModule):
 
     def val_dataloader(self) -> DataLoader:
         """ Function that loads the validation set. """
-        dev_dataset = load_chezod_dataset(self.hparams.val_files,
-                                          self.hparams.max_length)
+        val_dataset = load_chezod_dataset_two_files(self.hparams.val_seqs_file,
+                                                    self.hparams.val_scores_file,
+                                                    self.hparams.max_length)
         return DataLoader(
-            dataset=dev_dataset,
+            dataset=val_dataset,
             batch_size=self.hparams.batch_size,
             collate_fn=self.prepare_sample,
             num_workers=self.hparams.loader_workers,
@@ -132,16 +133,28 @@ class CheZODDataModule(LightningDataModule):
             help="Maximum sequence length.",
         )
         parser.add_argument(
-            "--train_files",
-            default="../data/CheZOD/train/zscores*.txt",
+            "--train_seqs_file",
+            default="../data/CheZOD/train/CheZOD998_training_set_sequences.fasta.txt",
             type=str,
-            help="Path to the files containing the train data (Use glob).",
+            help="Path to the files containing the train data sequences.",
         )
         parser.add_argument(
-            "--val_files",
-            default="../data/CheZOD/val/zscores*.txt",
+            "--train_scores_file",
+            default="../data/CheZOD/train/CheZOD998_training_set_CheZOD_scores.txt",
             type=str,
-            help="Path to the files containing the validation data (Use glob).",
+            help="Path to the files containing the train data scores.",
+        )
+        parser.add_argument(
+            "--val_seqs_file",
+            default="../data/CheZOD/val/CheZOD176_val_set_sequences.fasta.txt",
+            type=str,
+            help="Path to the files containing the train data sequences.",
+        )
+        parser.add_argument(
+            "--val_scores_file",
+            default="../data/CheZOD/val/CheZOD176_val_set_CheZOD_scores.txt",
+            type=str,
+            help="Path to the files containing the train data scores.",
         )
         parser.add_argument(
             "--test_files",
