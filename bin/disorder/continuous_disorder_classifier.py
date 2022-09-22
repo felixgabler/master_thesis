@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from deepspeed.ops.adam import FusedAdam, DeepSpeedCPUAdam
 from pytorch_lightning import LightningModule
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
-from torchmetrics import AUC, SpearmanCorrCoef
+from torchmetrics import AUROC, SpearmanCorrCoef
 from transformers import AlbertModel, BertModel, ESMModel, T5EncoderModel, XLNetModel
 
 
@@ -22,9 +22,9 @@ class ContinuousDisorderClassifier(LightningModule):
         super().__init__()
         self.save_hyperparameters(params)
 
-        # For comparability to the SETH paper, we compute Spearman's rho and AUC (with cutoff 8)
+        # For comparability to the SETH paper, we compute Spearman's rho and AUROC (with cutoff 8)
         self.metric_spearman = SpearmanCorrCoef()
-        self.metric_auc = AUC(reorder=True)
+        self.metric_auroc = AUROC()
 
         self.build_model()
 
@@ -69,7 +69,8 @@ class ContinuousDisorderClassifier(LightningModule):
             self.hidden1 = nn.Linear(rnn_out, 1)
 
         elif self.hparams.architecture == 'linear':
-            self.lin1 = nn.Linear(self.LM.config.hidden_size, 1)
+            self.lin1 = nn.Linear(self.LM.config.hidden_size, 10)
+            self.lin2 = nn.Linear(10, 1)
 
     def __build_features(self, input_ids, attention_mask, length):
         """
@@ -117,7 +118,7 @@ class ContinuousDisorderClassifier(LightningModule):
             if self.hparams.architecture == 'cnn':
                 scores = self.cnn(padded_word_embeddings).squeeze(dim=1)
             else:
-                scores = self.lin1(padded_word_embeddings).squeeze(dim=-1)
+                scores = self.lin2(torch.tanh(self.lin1(padded_word_embeddings))).squeeze(dim=-1)
 
             # WARNING: This will break if the batch size becomes larger than 1 !!!!
             scores_unpadded = scores[:, :length[0]]
@@ -183,13 +184,18 @@ class ContinuousDisorderClassifier(LightningModule):
 
     def _log_metrics(self, outputs, prefix):
         preds, targets = outputs['preds'], outputs['targets']
-        preds = preds[0].float()
-        targets = targets[0]
+        # WARNING: this code only works for batch size 1
+        # We cannot compare them directly because we first need to remove the padded areas
+        mask = targets[0] == 999
+        preds = preds[0][~mask].float()
+        targets = targets[0][~mask]
         self.metric_spearman(preds, targets)
-        self.metric_auc((preds <= 8).int(), (targets <= 8).int())
+        auroc = self.metric_auroc((preds <= 8).float(), (targets <= 8).int())
         self.log(f'{prefix}_loss', outputs['loss'], batch_size=self.hparams.batch_size)
         self.log(f'{prefix}_spearman', self.metric_spearman, batch_size=self.hparams.batch_size)
-        self.log(f'{prefix}_auc', self.metric_auc, batch_size=self.hparams.batch_size)
+        # We also need to replace AUROC 0 with 1 because a perfect prediction should get perfect score
+        # https://torchmetrics.readthedocs.io/en/stable/classification/auroc.html
+        self.log(f'{prefix}_auroc', torch.tensor(1.) if auroc.item() == 0 else auroc, batch_size=self.hparams.batch_size)
 
     def predict_step(self, batch, batch_idx: int, *args, **kwargs):
         inputs, y = batch
@@ -217,6 +223,7 @@ class ContinuousDisorderClassifier(LightningModule):
         elif self.hparams.architecture == 'linear':
             parameters += [
                 {"params": self.lin1.parameters()},
+                {"params": self.lin2.parameters()},
             ]
 
         if self.hparams.strategy is not None and self.hparams.strategy.endswith('_offload'):

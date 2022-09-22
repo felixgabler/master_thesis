@@ -63,7 +63,7 @@ ckpt_path = os.path.join(
 )
 checkpoint_callback = ModelCheckpoint(
     dirpath=ckpt_path,
-    filename="{epoch}-{val_loss:.2f}-{val_spearman:.2f}-{val_auc:.2f}",
+    filename="{epoch}-{val_loss:.2f}-{val_spearman:.2f}-{val_auroc:.2f}",
     save_top_k=args.save_top_k,
     monitor=args.monitor,
     every_n_epochs=1,
