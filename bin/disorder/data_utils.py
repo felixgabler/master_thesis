@@ -149,9 +149,9 @@ def load_chezod_dataset_two_files(seqs_path, scores_path, max_length=1536):
         for line in seqs_handle:
             if line.startswith('>') or len(line.strip()) == 0:
                 continue
-            seq = " ".join(list(re.sub(r"[UZOB]", "X", line.strip())))
-            if len(seq) <= max_length:
-                seqs.append(seq)
+            masked = list(re.sub(r"[UZOB]", "X", line.strip()))
+            if len(masked) <= max_length:
+                seqs.append(" ".join(masked))
 
     with open(scores_path) as scores_handle:
         for line in scores_handle:
