@@ -8,7 +8,7 @@ from bi_lstm_crf import CRF
 from deepspeed.ops.adam import FusedAdam, DeepSpeedCPUAdam
 from pytorch_lightning import LightningModule
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
-from torchmetrics import Accuracy, F1Score, MatthewsCorrCoef
+from torchmetrics.classification import BinaryAccuracy, BinaryF1Score, MulticlassAccuracy, BinaryMatthewsCorrCoef
 from transformers import AlbertModel, BertModel, ESMModel, T5EncoderModel, XLNetModel
 
 
@@ -26,18 +26,11 @@ class BinaryDisorderClassifier(LightningModule):
 
         self.num_classes = len(self.hparams.label_set.split(","))
         # We do not use ignore index because by the time we use the metrics, the predictions will already be unpadded
-        # We have to set multiclass because we want to transform binary data to multi class format.
-        self.metric_acc = Accuracy(num_classes=self.num_classes, multiclass=True)
+        self.metric_acc = BinaryAccuracy()
         # Behaves like sklearn.metrics.balanced_accuracy_score
-        self.metric_bac = Accuracy(num_classes=self.num_classes, average='macro', multiclass=True)
-        # We only want to see the f1 score with regard to misclassifying disorder. Will therefore extract the second dim
-        # https://github.com/Lightning-AI/metrics/issues/629
-        self.metric_f1 = F1Score(
-            num_classes=self.num_classes,
-            average='none',
-            multiclass=True
-        )
-        self.metric_mcc = MatthewsCorrCoef(num_classes=self.num_classes)
+        self.metric_bac = MulticlassAccuracy(num_classes=self.num_classes, average='macro')
+        self.metric_f1 = BinaryF1Score()
+        self.metric_mcc = BinaryMatthewsCorrCoef()
 
         self.build_model()
 
@@ -255,12 +248,12 @@ class BinaryDisorderClassifier(LightningModule):
         self.metric_bac(preds, targets)
         # The f1 score was very low and should instead behave like binary in sklearn
         # https://github.com/Lightning-AI/metrics/issues/629
-        f1 = self.metric_f1(preds, targets)[1]
+        self.metric_f1(preds, targets)
         self.metric_mcc(preds, targets)
         self.log(f'{prefix}_loss', outputs['loss'], batch_size=self.hparams.batch_size)
         self.log(f'{prefix}_acc', self.metric_acc, batch_size=self.hparams.batch_size)
         self.log(f'{prefix}_bac', self.metric_bac, batch_size=self.hparams.batch_size)
-        self.log(f'{prefix}_f1', f1, batch_size=self.hparams.batch_size)
+        self.log(f'{prefix}_f1', self.metric_f1, batch_size=self.hparams.batch_size)
         self.log(f'{prefix}_mcc', self.metric_mcc, batch_size=self.hparams.batch_size)
 
     def predict_step(self, batch, batch_idx: int, *args, **kwargs):

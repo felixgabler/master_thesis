@@ -7,7 +7,8 @@ import torch.nn.functional as F
 from deepspeed.ops.adam import FusedAdam, DeepSpeedCPUAdam
 from pytorch_lightning import LightningModule
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
-from torchmetrics import AUROC, SpearmanCorrCoef
+from torchmetrics import SpearmanCorrCoef
+from torchmetrics.classification import BinaryAUROC
 from transformers import AlbertModel, BertModel, ESMModel, T5EncoderModel, XLNetModel
 
 
@@ -24,7 +25,7 @@ class ContinuousDisorderClassifier(LightningModule):
 
         # For comparability to the SETH paper, we compute Spearman's rho and AUROC (with cutoff 8)
         self.metric_spearman = SpearmanCorrCoef()
-        self.metric_auroc = AUROC()
+        self.metric_auroc = BinaryAUROC()
 
         self.build_model()
 
