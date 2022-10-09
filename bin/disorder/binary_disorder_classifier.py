@@ -94,7 +94,8 @@ class BinaryDisorderClassifier(LightningModule):
             self.hidden1 = nn.Linear(rnn_out, 1)
 
         elif self.hparams.architecture == 'linear':
-            self.lin1 = nn.Linear(self.LM.config.hidden_size, 1)
+            self.lin1 = nn.Linear(self.LM.config.hidden_size, 10)
+            self.lin2 = nn.Linear(10, 1)
 
     def __build_features(self, input_ids, attention_mask, length):
         """
@@ -149,7 +150,7 @@ class BinaryDisorderClassifier(LightningModule):
             if self.hparams.architecture == 'cnn':
                 scores = self.cnn(padded_word_embeddings).squeeze(dim=1)
             else:
-                scores = self.lin1(padded_word_embeddings).squeeze(dim=-1)
+                scores = self.lin2(torch.tanh(self.lin1(padded_word_embeddings))).squeeze(dim=-1)
 
             # WARNING: This will break if the batch size becomes larger than 1 !!!!
             scores_unpadded = scores[:, :length[0]]
@@ -291,6 +292,7 @@ class BinaryDisorderClassifier(LightningModule):
         elif self.hparams.architecture == 'linear':
             parameters += [
                 {"params": self.lin1.parameters()},
+                {"params": self.lin2.parameters()},
             ]
 
         if self.hparams.strategy is not None and self.hparams.strategy.endswith('_offload'):
