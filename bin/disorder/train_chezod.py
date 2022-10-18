@@ -11,80 +11,86 @@ from transformers import logging
 from chezod_data_module import CheZODDataModule
 from continuous_disorder_classifier import ContinuousDisorderClassifier
 
-# Silence the warnings about transformers not loading correctly (i.e. decoder missing)
-logging.set_verbosity_error()
 
-parser = ArgumentParser(conflict_handler='resolve')
+def main(hparams):
+    dm = CheZODDataModule(hparams)
+    model = ContinuousDisorderClassifier(hparams)
 
-# Checkpointing and Early Stopping
-parser.add_argument("--monitor", default="val_spearman", type=str, help="Quantity to monitor.")
-parser.add_argument(
-    "--metric_mode",
-    default="max",
-    type=str,
-    help="If we want to min/max the monitored quantity.",
-    choices=["min", "max"],
-)
-parser.add_argument(
-    "--patience",
-    default=5,
-    type=int,
-    help="Number of epochs with no improvement after which training will be stopped.",
-)
-parser.add_argument(
-    "--save_top_k",
-    default=3,
-    type=int,
-    help="The best k models according to the quantity monitored will be saved.",
-)
+    logger = TensorBoardLogger(
+        save_dir="../logs/",
+        version=datetime.now().strftime("%d-%m-%Y--%H-%M-%S"),
+    )
 
-# add model and data module specific args
-parser = ContinuousDisorderClassifier.add_model_specific_args(parser)
-parser = CheZODDataModule.add_data_specific_args(parser)
-# add all the available trainer options to argparse
-parser = Trainer.add_argparse_args(parser)
+    # Init model checkpoint path and saver
+    ckpt_path = os.path.join(
+        logger.save_dir,
+        logger.name,
+        f"{logger.version}",
+        "checkpoints",
+    )
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=ckpt_path,
+        filename="{epoch}-{val_loss:.2f}-{val_spearman:.2f}-{val_auroc:.2f}",
+        save_top_k=hparams.save_top_k,
+        monitor=hparams.monitor,
+        every_n_epochs=1,
+        mode=hparams.metric_mode,
+    )
 
-args = parser.parse_args()
+    early_stop_callback = EarlyStopping(
+        monitor=hparams.monitor,
+        min_delta=0.0,
+        patience=hparams.patience,
+        verbose=True,
+        mode=hparams.metric_mode,
+    )
 
-dm = CheZODDataModule(args)
-model = ContinuousDisorderClassifier(args)
+    trainer = Trainer.from_argparse_args(
+        hparams,
+        logger=logger,
+        callbacks=[checkpoint_callback, early_stop_callback],
+    )
 
-logger = TensorBoardLogger(
-    save_dir="../logs/",
-    version=datetime.now().strftime("%d-%m-%Y--%H-%M-%S"),
-)
+    trainer.fit(model, dm)
 
-# Init model checkpoint path and saver
-ckpt_path = os.path.join(
-    logger.save_dir,
-    logger.name,
-    f"{logger.version}",
-    "checkpoints",
-)
-checkpoint_callback = ModelCheckpoint(
-    dirpath=ckpt_path,
-    filename="{epoch}-{val_loss:.2f}-{val_spearman:.2f}-{val_auroc:.2f}",
-    save_top_k=args.save_top_k,
-    monitor=args.monitor,
-    every_n_epochs=1,
-    mode=args.metric_mode,
-)
+    best_checkpoints_paths = glob.glob(ckpt_path + "/*")
+    print(f"Best checkpoints: {best_checkpoints_paths}")
 
-early_stop_callback = EarlyStopping(
-    monitor=args.monitor,
-    min_delta=0.0,
-    patience=args.patience,
-    verbose=True,
-    mode=args.metric_mode,
-)
 
-trainer = Trainer.from_argparse_args(
-    args,
-    logger=logger,
-    callbacks=[checkpoint_callback, early_stop_callback],
-)
+if __name__ == "__main__":
+    # Silence the warnings about transformers not loading correctly (i.e. decoder missing)
+    logging.set_verbosity_error()
 
-trainer.fit(model, dm)
+    parser = ArgumentParser(conflict_handler='resolve')
 
-best_checkpoints_paths = glob.glob(ckpt_path + "/*")
-print(f"Best checkpoints: {best_checkpoints_paths}")
+    # Checkpointing and Early Stopping
+    parser.add_argument("--monitor", default="val_spearman", type=str, help="Quantity to monitor.")
+    parser.add_argument(
+        "--metric_mode",
+        default="max",
+        type=str,
+        help="If we want to min/max the monitored quantity.",
+        choices=["min", "max"],
+    )
+    parser.add_argument(
+        "--patience",
+        default=5,
+        type=int,
+        help="Number of epochs with no improvement after which training will be stopped.",
+    )
+    parser.add_argument(
+        "--save_top_k",
+        default=3,
+        type=int,
+        help="The best k models according to the quantity monitored will be saved.",
+    )
+
+    # add model and data module specific args
+    parser = ContinuousDisorderClassifier.add_model_specific_args(parser)
+    parser = CheZODDataModule.add_data_specific_args(parser)
+    # add all the available trainer options to argparse
+    parser = Trainer.add_argparse_args(parser)
+
+    args = parser.parse_args()
+
+    main(args)

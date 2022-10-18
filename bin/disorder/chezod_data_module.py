@@ -30,7 +30,7 @@ class CheZODDataModule(LightningDataModule):
         elif "xlnet" in model_name:
             self.tokenizer = XLNetTokenizer.from_pretrained(model_name, do_lower_case=False)
         elif "esm" in model_name:
-            self.tokenizer = ESMTokenizer.from_pretrained(model_name, do_lower_case=False)
+            self.tokenizer = ESMTokenizer.from_pretrained('facebook/esm-1b', do_lower_case=False)
         else:
             print("Unkown model name")
 

@@ -8,7 +8,8 @@ from bi_lstm_crf import CRF
 from deepspeed.ops.adam import FusedAdam, DeepSpeedCPUAdam
 from pytorch_lightning import LightningModule
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
-from torchmetrics.classification import BinaryAccuracy, BinaryF1Score, MulticlassAccuracy, BinaryMatthewsCorrCoef
+from torchmetrics import Accuracy
+from torchmetrics.classification import BinaryAccuracy, BinaryF1Score, BinaryMatthewsCorrCoef
 from transformers import AlbertModel, BertModel, ESMModel, T5EncoderModel, XLNetModel
 
 
@@ -28,7 +29,7 @@ class BinaryDisorderClassifier(LightningModule):
         # We do not use ignore index because by the time we use the metrics, the predictions will already be unpadded
         self.metric_acc = BinaryAccuracy()
         # Behaves like sklearn.metrics.balanced_accuracy_score
-        self.metric_bac = MulticlassAccuracy(num_classes=self.num_classes, average='macro')
+        self.metric_bac = Accuracy(num_classes=self.num_classes, average='macro', multiclass=True)
         self.metric_f1 = BinaryF1Score()
         self.metric_mcc = BinaryMatthewsCorrCoef()
 
@@ -45,12 +46,17 @@ class BinaryDisorderClassifier(LightningModule):
             self.LM = BertModel.from_pretrained(model_name)
         elif "xlnet" in model_name:
             self.LM = XLNetModel.from_pretrained(model_name)
+        elif "esm2" in model_name:
+            model, _ = torch.hub.load("facebookresearch/esm:main", model_name)
+            model.config = lambda: None
+            setattr(model.config, 'hidden_size', model.embed_dim)
+            self.LM = model
         elif "esm" in model_name:
             self.LM = ESMModel.from_pretrained(model_name)
         else:
             print("Unkown model name")
 
-        if self.hparams.gradient_checkpointing and "esm" not in model_name:
+        if self.hparams.gradient_checkpointing and hasattr(self.LM, 'gradient_checkpointing_enable'):
             self.LM.gradient_checkpointing_enable()
 
         if self.hparams.nr_frozen_epochs > 0:
@@ -106,7 +112,10 @@ class BinaryDisorderClassifier(LightningModule):
         :param length:
         :return:
         """
-        padded_word_embeddings = self.LM(input_ids, attention_mask)[0]
+        if 'esm2' in self.hparams.model_name:
+            padded_word_embeddings = self.LM(input_ids, repr_layers=[33])["representations"][33]
+        else:
+            padded_word_embeddings = self.LM(input_ids, attention_mask)[0]
 
         # We pack the padded sequence to improve the computational speed during training
         # https://github.com/pytorch/pytorch/issues/43227
@@ -144,7 +153,11 @@ class BinaryDisorderClassifier(LightningModule):
             return scores_unpadded
 
         elif self.hparams.architecture in ['cnn', 'linear']:
-            padded_word_embeddings = self.LM(input_ids, attention_mask)[0]
+            if 'esm2' in self.hparams.model_name:
+                # TODO: replace end-of-word-padding with padding_idx to get real masking
+                padded_word_embeddings = self.LM(input_ids, repr_layers=[33])["representations"][33]
+            else:
+                padded_word_embeddings = self.LM(input_ids, attention_mask)[0]
 
             # We need to make preds and target have same dimension for loss and metrics
             if self.hparams.architecture == 'cnn':
@@ -251,11 +264,16 @@ class BinaryDisorderClassifier(LightningModule):
         # https://github.com/Lightning-AI/metrics/issues/629
         self.metric_f1(preds, targets)
         self.metric_mcc(preds, targets)
-        self.log(f'{prefix}_loss', outputs['loss'], batch_size=self.hparams.batch_size)
-        self.log(f'{prefix}_acc', self.metric_acc, batch_size=self.hparams.batch_size)
-        self.log(f'{prefix}_bac', self.metric_bac, batch_size=self.hparams.batch_size)
-        self.log(f'{prefix}_f1', self.metric_f1, batch_size=self.hparams.batch_size)
-        self.log(f'{prefix}_mcc', self.metric_mcc, batch_size=self.hparams.batch_size)
+        self.log(f'{prefix}_loss', outputs['loss'], batch_size=self.hparams.batch_size,
+                 sync_dist=self.hparams.strategy is not None and 'deepspeed' in self.hparams.strategy)
+        self.log(f'{prefix}_acc', self.metric_acc, batch_size=self.hparams.batch_size,
+                 sync_dist=self.hparams.strategy is not None and 'deepspeed' in self.hparams.strategy)
+        self.log(f'{prefix}_bac', self.metric_bac, batch_size=self.hparams.batch_size,
+                 sync_dist=self.hparams.strategy is not None and 'deepspeed' in self.hparams.strategy)
+        self.log(f'{prefix}_f1', self.metric_f1, batch_size=self.hparams.batch_size,
+                 sync_dist=self.hparams.strategy is not None and 'deepspeed' in self.hparams.strategy)
+        self.log(f'{prefix}_mcc', self.metric_mcc, batch_size=self.hparams.batch_size,
+                 sync_dist=self.hparams.strategy is not None and 'deepspeed' in self.hparams.strategy)
 
     def predict_step(self, batch, batch_idx: int, *args, **kwargs):
         inputs, y, padded_y = batch

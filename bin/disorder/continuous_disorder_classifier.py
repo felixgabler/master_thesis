@@ -40,12 +40,17 @@ class ContinuousDisorderClassifier(LightningModule):
             self.LM = BertModel.from_pretrained(model_name)
         elif "xlnet" in model_name:
             self.LM = XLNetModel.from_pretrained(model_name)
+        elif "esm2" in model_name:
+            model, _ = torch.hub.load("facebookresearch/esm:main", model_name)
+            model.config = lambda: None
+            setattr(model.config, 'hidden_size', model.embed_dim)
+            self.LM = model
         elif "esm" in model_name:
             self.LM = ESMModel.from_pretrained(model_name)
         else:
             print("Unkown model name")
 
-        if self.hparams.gradient_checkpointing and "esm" not in model_name:
+        if self.hparams.gradient_checkpointing and hasattr(self.LM, 'gradient_checkpointing_enable'):
             self.LM.gradient_checkpointing_enable()
 
         if self.hparams.nr_frozen_epochs > 0:
@@ -82,7 +87,10 @@ class ContinuousDisorderClassifier(LightningModule):
         :param length:
         :return:
         """
-        padded_word_embeddings = self.LM(input_ids, attention_mask)[0]
+        if 'esm2' in self.hparams.model_name:
+            padded_word_embeddings = self.LM(input_ids, repr_layers=[33])["representations"][33]
+        else:
+            padded_word_embeddings = self.LM(input_ids, attention_mask)[0]
 
         # We pack the padded sequence to improve the computational speed during training
         # https://github.com/pytorch/pytorch/issues/43227
@@ -113,7 +121,11 @@ class ContinuousDisorderClassifier(LightningModule):
             return scores_unpadded
 
         elif self.hparams.architecture in ['cnn', 'linear']:
-            padded_word_embeddings = self.LM(input_ids, attention_mask)[0]
+            if 'esm2' in self.hparams.model_name:
+                # TODO: replace end-of-word-padding with padding_idx to get real masking
+                padded_word_embeddings = self.LM(input_ids, repr_layers=[33])["representations"][33]
+            else:
+                padded_word_embeddings = self.LM(input_ids, attention_mask)[0]
 
             # We need to make preds and target have same dimension for loss and metrics
             if self.hparams.architecture == 'cnn':
@@ -192,11 +204,16 @@ class ContinuousDisorderClassifier(LightningModule):
         targets = targets[0][~mask]
         self.metric_spearman(preds, targets)
         auroc = self.metric_auroc((preds <= 8).float(), (targets <= 8).int())
-        self.log(f'{prefix}_loss', outputs['loss'], batch_size=self.hparams.batch_size)
-        self.log(f'{prefix}_spearman', self.metric_spearman, batch_size=self.hparams.batch_size)
+        self.log(f'{prefix}_loss', outputs['loss'], batch_size=self.hparams.batch_size,
+                 sync_dist=self.hparams.strategy is not None and 'deepspeed' in self.hparams.strategy)
+        self.log(f'{prefix}_spearman', self.metric_spearman, batch_size=self.hparams.batch_size,
+                 sync_dist=self.hparams.strategy is not None and 'deepspeed' in self.hparams.strategy)
         # We also need to replace AUROC 0 with 1 because a perfect prediction should get perfect score
         # https://torchmetrics.readthedocs.io/en/stable/classification/auroc.html
-        self.log(f'{prefix}_auroc', torch.tensor(1.) if auroc.item() == 0 else auroc, batch_size=self.hparams.batch_size)
+        self.log(f'{prefix}_auroc',
+                 torch.tensor(1.) if ((preds <= 8).int() == (targets <= 8).int()).all() else auroc,
+                 batch_size=self.hparams.batch_size,
+                 sync_dist=self.hparams.strategy is not None and 'deepspeed' in self.hparams.strategy)
 
     def predict_step(self, batch, batch_idx: int, *args, **kwargs):
         inputs, y = batch

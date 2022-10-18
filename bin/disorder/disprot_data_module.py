@@ -31,8 +31,8 @@ class DisprotDataModule(LightningDataModule):
             self.tokenizer = BertTokenizer.from_pretrained(model_name, do_lower_case=False)
         elif "xlnet" in model_name:
             self.tokenizer = XLNetTokenizer.from_pretrained(model_name, do_lower_case=False)
-        elif "esm" in model_name:
-            self.tokenizer = ESMTokenizer.from_pretrained(model_name, do_lower_case=False)
+        elif "esm" in model_name: # Use esm-1b tokenizer for all esm models
+            self.tokenizer = ESMTokenizer.from_pretrained('facebook/esm-1b', do_lower_case=False)
         else:
             print("Unkown model name")
 
@@ -170,25 +170,25 @@ class DisprotDataModule(LightningDataModule):
         )
         parser.add_argument(
             "--train_file",
-            default="../data/disprot/flDPnn_Training_Annotation.txt",
+            default="../data/disprot/2022/disprot-disorder-2022-train.txt",
             type=str,
             help="Path to the file containing the train data.",
         )
         parser.add_argument(
             "--val_file",
-            default="../data/disprot/flDPnn_Validation_Annotation.txt",
+            default="../data/disprot/2022/disprot-disorder-2022-val.txt",
             type=str,
             help="Path to the file containing the validation data.",
         )
         parser.add_argument(
             "--test_file",
-            default="../data/disprot/flDPnn_Test_Annotation.txt",
+            default="../data/disprot/2022/disprot-disorder-2022-test.txt",
             type=str,
             help="Path to the file containing the test data.",
         )
         parser.add_argument(
             "--predict_file",
-            default="../data/disprot/flDPnn_Validation_Annotation.txt",
+            default="../data/disprot/2022/disprot-disorder-2022-val.txt",
             type=str,
             help="Path to the file containing the prediction data.",
         )

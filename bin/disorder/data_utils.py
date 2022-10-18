@@ -132,7 +132,7 @@ def load_chezod_dataset(glob_path, max_length=1536):
                 item["seq"] += f" {parts[0]}"
                 item["scores"].append(float(parts[2]))
 
-            if len(item["seq"]) <= max_length:
+            if len(item["scores"]) <= max_length:
                 item["seq"] = item["seq"].strip()
                 items.append(item)
 
