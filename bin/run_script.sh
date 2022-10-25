@@ -17,7 +17,7 @@ python disorder/train.py --architecture="rnn_crf" --model_name="Rostlab/prot_ber
 #        --precision=16 --accelerator="auto" --devices="auto" --strategy="dp" &> predict_bert_crf
 
 # Make sure PL doesn't occupy all the GPUs from ray
-#python disorder/hyperparam_tune.py --precision=16 --accelerator="gpu" --devices="1" --min_epochs=15 --max_epochs=30 --loader_workers=4 \
+#python disorder/hyperparam_tune_disprot_esm1.py --precision=16 --accelerator="gpu" --devices="1" --min_epochs=15 --max_epochs=30 --loader_workers=4 \
 #       --train_file="/tmp/global2/vikram/felix/master_thesis/data/disprot/flDPnn_Training_Annotation.txt" \
 #       --val_file="/tmp/global2/vikram/felix/master_thesis/data/disprot/flDPnn_Validation_Annotation.txt" \
 #       &> out_tune_bert

@@ -1,4 +1,5 @@
 import logging as log
+import math
 from argparse import ArgumentParser
 
 import torch
@@ -59,10 +60,15 @@ class BinaryDisorderClassifier(LightningModule):
         if self.hparams.gradient_checkpointing and hasattr(self.LM, 'gradient_checkpointing_enable'):
             self.LM.gradient_checkpointing_enable()
 
+        self.LM_parameter_count = 0
+        for _ in self.LM.named_parameters():
+            self.LM_parameter_count += 0.5
+
         if self.hparams.nr_frozen_epochs > 0:
             self.freeze_encoder()
         else:
-            self._frozen = False
+            self._frozen = True
+            self.unfreeze_encoder()
 
         if self.hparams.architecture == 'rnn_crf':
             hidden_features = self.hparams.hidden_features
@@ -85,7 +91,7 @@ class BinaryDisorderClassifier(LightningModule):
 
         elif self.hparams.architecture == 'cnn':
             # We want the CNN to return logits for BCEWithLogitsLoss
-            self.cnn = SETH_CNN(1, self.LM.config.hidden_size)
+            self.cnn = SETH_CNN(1, self.LM.config.hidden_size, self.hparams.cnn_bottleneck, self.hparams.cnn_kernel_n)
 
         elif self.hparams.architecture == 'rnn':
             hidden_features = self.hparams.hidden_features
@@ -329,8 +335,10 @@ class BinaryDisorderClassifier(LightningModule):
         """ un-freezes the encoder layer. """
         if self._frozen:
             log.info(f"\n-- Encoder model fine-tuning")
+            i = 0
             for param in self.LM.parameters():
-                param.requires_grad = True
+                param.requires_grad = i >= self.LM_parameter_count
+                i += 1
             self._frozen = False
 
     def freeze_encoder(self) -> None:
@@ -378,6 +386,18 @@ class BinaryDisorderClassifier(LightningModule):
             default=True,
             type=bool,
             help="Enable bidirectional RNN in the encoder.",
+        )
+        parser.add_argument(
+            "--cnn_bottleneck",
+            default=28,
+            type=int,
+            help="Number of neurons in the CNN.",
+        )
+        parser.add_argument(
+            "--cnn_kernel_n",
+            default=5,
+            type=int,
+            help="Kernel width.",
         )
         parser.add_argument(
             "--hidden_features",
@@ -428,16 +448,15 @@ class BinaryDisorderClassifier(LightningModule):
 
 # Taken from https://github.com/DagmarIlz/SETH/blob/main/SETH_1.py
 class SETH_CNN(nn.Module):
-    def __init__(self, n_classes, n_features):
+    def __init__(self, n_classes, n_features, bottleneck_dim=28, kernel_n=5):
         super(SETH_CNN, self).__init__()
         self.n_classes = n_classes
-        bottleneck_dim = 28
         self.classifier = nn.Sequential(
             # summarize information from 5 neighbouring amino acids (AAs)
             # padding: dimension corresponding to AA number does not change
-            nn.Conv2d(n_features, bottleneck_dim, kernel_size=(5, 1), padding=(2, 0)),
+            nn.Conv2d(n_features, bottleneck_dim, kernel_size=(kernel_n, 1), padding=(math.floor(kernel_n / 2), 0)),
             nn.Tanh(),
-            nn.Conv2d(bottleneck_dim, self.n_classes, kernel_size=(5, 1), padding=(2, 0))
+            nn.Conv2d(bottleneck_dim, self.n_classes, kernel_size=(kernel_n, 1), padding=(math.floor(kernel_n / 2), 0))
         )
 
     def forward(self, x):
