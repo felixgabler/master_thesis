@@ -5,12 +5,10 @@ from argparse import ArgumentParser
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from deepspeed.ops.adam import FusedAdam, DeepSpeedCPUAdam
 from pytorch_lightning import LightningModule
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 from torchmetrics import SpearmanCorrCoef
 from torchmetrics.classification import BinaryAUROC
-from transformers import AlbertModel, BertModel, ESMModel, T5EncoderModel, XLNetModel
 
 
 class ContinuousDisorderClassifier(LightningModule):
@@ -31,15 +29,19 @@ class ContinuousDisorderClassifier(LightningModule):
         self.build_model()
 
     def build_model(self) -> None:
-        model_name = self.hparams.model_name
         """ Init BERT model + tokenizer + classification head."""
+        model_name = self.hparams.model_name
         if "t5" in model_name:
+            from transformers import T5EncoderModel
             self.LM = T5EncoderModel.from_pretrained(model_name)
         elif "albert" in model_name:
+            from transformers import AlbertModel
             self.LM = AlbertModel.from_pretrained(model_name)
         elif "bert" in model_name:
+            from transformers import BertModel
             self.LM = BertModel.from_pretrained(model_name)
         elif "xlnet" in model_name:
+            from transformers import XLNetModel
             self.LM = XLNetModel.from_pretrained(model_name)
         elif "esm2" in model_name:
             model, _ = torch.hub.load("facebookresearch/esm:main", model_name)
@@ -47,9 +49,10 @@ class ContinuousDisorderClassifier(LightningModule):
             setattr(model.config, 'hidden_size', model.embed_dim)
             self.LM = model
         elif "esm" in model_name:
+            from transformers import ESMModel
             self.LM = ESMModel.from_pretrained(model_name)
         else:
-            print("Unkown model name")
+            print("Unknown model name")
 
         if self.hparams.gradient_checkpointing and hasattr(self.LM, 'gradient_checkpointing_enable'):
             self.LM.gradient_checkpointing_enable()
@@ -251,8 +254,10 @@ class ContinuousDisorderClassifier(LightningModule):
             ]
 
         if self.hparams.strategy is not None and self.hparams.strategy.endswith('_offload'):
+            from deepspeed.ops.adam import DeepSpeedCPUAdam
             return DeepSpeedCPUAdam(parameters, lr=self.hparams.learning_rate)
         elif self.hparams.strategy == 'deepspeed_stage_3':
+            from deepspeed.ops.adam import FusedAdam
             return FusedAdam(parameters, lr=self.hparams.learning_rate)
         else:
             return torch.optim.Adam(parameters, lr=self.hparams.learning_rate)

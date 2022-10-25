@@ -4,8 +4,8 @@ from argparse import ArgumentParser
 from pytorch_lightning import Trainer
 from transformers import logging
 
-from chezod_data_module import CheZODDataModule
-from continuous_disorder_classifier import ContinuousDisorderClassifier
+from speed_chezod_data_module import SpeedCheZODDataModule
+from speed_continuous_disorder_classifier import SpeedContinuousDisorderClassifier
 
 # Silence the warnings about transformers not loading correctly (i.e. decoder missing)
 logging.set_verbosity_error()
@@ -31,7 +31,7 @@ parser.add_argument(
 )
 
 # add all the available trainer options to argparse
-parser = CheZODDataModule.add_data_specific_args(parser)
+parser = SpeedCheZODDataModule.add_data_specific_args(parser)
 parser = Trainer.add_argparse_args(parser)
 
 args = parser.parse_args()
@@ -39,8 +39,8 @@ trainer = Trainer.from_argparse_args(args)
 
 tic = time.perf_counter()
 
-dm = CheZODDataModule(args)
-model = ContinuousDisorderClassifier.load_from_checkpoint(args.checkpoint, hparams_file=args.hparams_file)
+dm = SpeedCheZODDataModule(args)
+model = SpeedContinuousDisorderClassifier.load_from_checkpoint(args.checkpoint, hparams_file=args.hparams_file)
 
 predictions = trainer.predict(model, dm)
 
