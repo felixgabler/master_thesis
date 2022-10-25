@@ -92,6 +92,28 @@ class NLPDataset(Dataset):
         return NLPDataset(self.rows + other.rows)
 
 
+def load_prediction_fasta(path, max_length=1536, skip_first=0):
+    items = []
+    with open(path) as file_handler:
+        i = -1
+        item = None
+        for line in file_handler:
+            i += 1
+            if i < skip_first:
+                continue
+            if line.startswith('>'):
+                if item is not None and len(item["seq"]) < max_length * 2:
+                    items.append(item)
+                item = {
+                    "acc": line.strip(),
+                    "seq": ""
+                }
+            else:
+                item["seq"] += " ".join(list(re.sub(r"[UZOB]", "X", line.strip())))
+
+    return NLPDataset(items)
+
+
 def load_disprot_dataset(path, max_length=1536, skip_first=0, lines_per_entry=3):
     items = []
     with open(path) as file_handler:

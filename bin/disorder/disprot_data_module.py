@@ -8,7 +8,7 @@ from torchnlp.encoders import LabelEncoder
 from torchnlp.utils import collate_tensors
 from transformers import AlbertTokenizer, BertTokenizer, ESMTokenizer, T5Tokenizer, XLNetTokenizer
 
-from data_utils import load_disprot_dataset
+from data_utils import load_disprot_dataset, load_prediction_fasta
 
 
 class DisprotDataModule(LightningDataModule):
@@ -49,9 +49,8 @@ class DisprotDataModule(LightningDataModule):
             - dictionary with the expected target labels.
         """
         sample = collate_tensors(sample)
-        seq, label = sample['seq'], sample['label']
 
-        inputs = self.tokenizer(seq,
+        inputs = self.tokenizer(sample["seq"],
                                 # Special tokens not useful for CRF return values
                                 add_special_tokens=False,
                                 padding='max_length',
@@ -60,16 +59,21 @@ class DisprotDataModule(LightningDataModule):
                                 return_tensors='pt',
                                 max_length=self.hparams.max_length)
 
-        try:
-            # Prepare target:
-            labels = [self.label_encoder.batch_encode(lab) for lab in label]
-            unpadded = torch.cat(labels).unsqueeze(0)
-            labels.append(torch.empty(self.hparams.max_length))
-            # We pad with 0 but when computing the metrics and loss, the padding will already be removed or a mask is used
-            padded_sequences_labels = pad_sequence(labels, batch_first=True)
-            return inputs, unpadded, padded_sequences_labels[:-1]
-        except RuntimeError:
-            raise Exception(f"Label encoder found unknown label: {label}")
+        if "label" in sample:
+            label = sample["label"]
+            try:
+                # Prepare target:
+                labels = [self.label_encoder.batch_encode(lab) for lab in label]
+                unpadded = torch.cat(labels).unsqueeze(0)
+                labels.append(torch.empty(self.hparams.max_length))
+                # We pad with 0 but when computing the metrics and loss, the padding will already be removed or a mask is used
+                padded_sequences_labels = pad_sequence(labels, batch_first=True)
+                return inputs, unpadded, padded_sequences_labels[:-1]
+            except RuntimeError:
+                raise Exception(f"Label encoder found unknown label: {label}")
+        else:
+            return inputs, None, None
+
 
     def train_dataloader(self) -> DataLoader:
         """ Function that loads the train set. """
@@ -113,10 +117,9 @@ class DisprotDataModule(LightningDataModule):
 
     def predict_dataloader(self) -> DataLoader:
         """ Function that loads the prediction set. """
-        predict_dataset = load_disprot_dataset(self.hparams.predict_file,
-                                               self.hparams.max_length,
-                                               self.hparams.skip_first_lines,
-                                               self.hparams.lines_per_entry)
+        predict_dataset = load_prediction_fasta(self.hparams.predict_file,
+                                                self.hparams.max_length,
+                                                self.hparams.skip_first_lines)
         return DataLoader(
             dataset=predict_dataset,
             batch_size=self.hparams.batch_size,

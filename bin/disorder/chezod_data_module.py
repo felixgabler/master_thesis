@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader, RandomSampler
 from torchnlp.utils import collate_tensors
 from transformers import AlbertTokenizer, BertTokenizer, ESMTokenizer, T5Tokenizer, XLNetTokenizer
 
-from data_utils import load_chezod_dataset, load_chezod_dataset_two_files
+from data_utils import load_chezod_dataset, load_chezod_dataset_two_files, load_prediction_fasta
 
 
 class CheZODDataModule(LightningDataModule):
@@ -44,9 +44,8 @@ class CheZODDataModule(LightningDataModule):
             - dictionary with the expected target labels.
         """
         sample = collate_tensors(sample)
-        seq, scores = sample['seq'], sample['scores']
 
-        inputs = self.tokenizer(seq,
+        inputs = self.tokenizer(sample['seq'],
                                 # Special tokens not useful for CRF return values and also make it harder
                                 add_special_tokens=False,
                                 padding='max_length',
@@ -55,9 +54,12 @@ class CheZODDataModule(LightningDataModule):
                                 return_tensors='pt',
                                 max_length=self.hparams.max_length)
 
-        scores = torch.tensor(scores).permute(1, 0)
+        if "scores" in sample:
+            scores = torch.tensor(sample["scores"]).permute(1, 0)
 
-        return inputs, scores
+            return inputs, scores
+        else:
+            return inputs, None
 
     def train_dataloader(self) -> DataLoader:
         """ Function that loads the train set. """
@@ -97,8 +99,8 @@ class CheZODDataModule(LightningDataModule):
 
     def predict_dataloader(self) -> DataLoader:
         """ Function that loads the prediction set. """
-        predict_dataset = load_chezod_dataset(self.hparams.predict_files,
-                                              self.hparams.max_length)
+        predict_dataset = load_prediction_fasta(self.hparams.predict_files,
+                                                self.hparams.max_length)
         return DataLoader(
             dataset=predict_dataset,
             batch_size=self.hparams.batch_size,

@@ -54,7 +54,7 @@ class BinaryDisorderClassifier(LightningModule):
         elif "esm" in model_name:
             self.LM = ESMModel.from_pretrained(model_name)
         else:
-            print("Unkown model name")
+            print("Unknown model name")
 
         if self.hparams.gradient_checkpointing and hasattr(self.LM, 'gradient_checkpointing_enable'):
             self.LM.gradient_checkpointing_enable()
@@ -276,7 +276,7 @@ class BinaryDisorderClassifier(LightningModule):
                  sync_dist=self.hparams.strategy is not None and 'deepspeed' in self.hparams.strategy)
 
     def predict_step(self, batch, batch_idx: int, *args, **kwargs):
-        inputs, y, padded_y = batch
+        inputs, _, __ = batch
         inputs = inputs.to(self.device)
         preds = self.forward(**inputs)
         if self.hparams.architecture == 'rnn_crf':

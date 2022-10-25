@@ -216,7 +216,7 @@ class ContinuousDisorderClassifier(LightningModule):
                  sync_dist=self.hparams.strategy is not None and 'deepspeed' in self.hparams.strategy)
 
     def predict_step(self, batch, batch_idx: int, *args, **kwargs):
-        inputs, y = batch
+        inputs, _ = batch
         inputs = inputs.to(self.device)
         preds = self.forward(**inputs)
         return preds
