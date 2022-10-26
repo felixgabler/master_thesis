@@ -41,6 +41,7 @@ class SpeedCheZODDataModule(CheZODDataModule):
         """ Function that loads the prediction set. """
         predict_dataset = load_prediction_fasta(self.hparams.predict_files,
                                                 self.hparams.max_length)
+        self.dataset = predict_dataset
         return DataLoader(
             dataset=predict_dataset,
             batch_size=self.hparams.batch_size,

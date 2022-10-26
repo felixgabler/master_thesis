@@ -43,11 +43,13 @@ dm = SpeedCheZODDataModule(args)
 model = SpeedContinuousDisorderClassifier.load_from_checkpoint(args.checkpoint, hparams_file=args.hparams_file)
 
 predictions = trainer.predict(model, dm)
+accessions = dm.dataset['acc']
 
 with open(args.out_file, 'w') as out_file:
-    for p in predictions:
+    for i, p in enumerate(predictions):
+        acc = accessions[i]
         pred = "".join([str(s) for s in p.flatten().tolist()])
-        out_file.writelines([pred, '\n'])
+        out_file.writelines([acc, '\n', pred, '\n'])
 
 toc = time.perf_counter()
 print(f"Predicting {len(predictions)} sequences took {toc - tic:0.4f} seconds")
