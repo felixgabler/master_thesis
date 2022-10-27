@@ -118,7 +118,7 @@ class CheZODDataModule(LightningDataModule):
         parser = parent_parser.add_argument_group("CheZODDataModule")
         parser.add_argument(
             "--model_name",
-            default="Rostlab/prot_t5_xl_half_uniref50-enc",
+            default="esm2_t33_650M_UR50D",
             type=str,
             help="Language model to use as embedding encoder (ProtTrans or ESM)",
         )
@@ -130,7 +130,7 @@ class CheZODDataModule(LightningDataModule):
         )
         parser.add_argument(
             "--max_length",
-            default=1536,
+            default=3000,
             type=int,
             help="Maximum sequence length.",
         )

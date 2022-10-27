@@ -6,12 +6,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from bi_lstm_crf import CRF
-from deepspeed.ops.adam import FusedAdam, DeepSpeedCPUAdam
 from pytorch_lightning import LightningModule
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 from torchmetrics import Accuracy
 from torchmetrics.classification import BinaryAccuracy, BinaryF1Score, BinaryMatthewsCorrCoef
-from transformers import AlbertModel, BertModel, ESMModel, T5EncoderModel, XLNetModel
 
 
 class BinaryDisorderClassifier(LightningModule):
@@ -40,12 +38,16 @@ class BinaryDisorderClassifier(LightningModule):
         model_name = self.hparams.model_name
         """ Init BERT model + tokenizer + classification head."""
         if "t5" in model_name:
+            from transformers import T5EncoderModel
             self.LM = T5EncoderModel.from_pretrained(model_name)
         elif "albert" in model_name:
+            from transformers import AlbertModel
             self.LM = AlbertModel.from_pretrained(model_name)
         elif "bert" in model_name:
+            from transformers import BertModel
             self.LM = BertModel.from_pretrained(model_name)
         elif "xlnet" in model_name:
+            from transformers import XLNetModel
             self.LM = XLNetModel.from_pretrained(model_name)
         elif "esm2" in model_name:
             model, _ = torch.hub.load("facebookresearch/esm:main", model_name)
@@ -53,6 +55,7 @@ class BinaryDisorderClassifier(LightningModule):
             setattr(model.config, 'hidden_size', model.embed_dim)
             self.LM = model
         elif "esm" in model_name:
+            from transformers import ESMModel
             self.LM = ESMModel.from_pretrained(model_name)
         else:
             print("Unknown model name")
@@ -320,8 +323,10 @@ class BinaryDisorderClassifier(LightningModule):
             ]
 
         if self.hparams.strategy is not None and self.hparams.strategy.endswith('_offload'):
+            from deepspeed.ops.adam import DeepSpeedCPUAdam
             return DeepSpeedCPUAdam(parameters, lr=self.hparams.learning_rate)
         elif self.hparams.strategy == 'deepspeed_stage_3':
+            from deepspeed.ops.adam import FusedAdam
             return FusedAdam(parameters, lr=self.hparams.learning_rate)
         else:
             return torch.optim.Adam(parameters, lr=self.hparams.learning_rate)
@@ -357,13 +362,13 @@ class BinaryDisorderClassifier(LightningModule):
         parser = parent_parser.add_argument_group("BinaryDisorderClassifier")
         parser.add_argument(
             "--model_name",
-            default="Rostlab/prot_t5_xl_half_uniref50-enc",
+            default="esm2_t33_650M_UR50D",
             type=str,
             help="Language model to use as embedding encoder (ProtTrans or ESM)",
         )
         parser.add_argument(
             "--architecture",
-            default="rnn_crf",
+            default="cnn",
             type=str,
             help="Architecture to use after embedding",
             choices=['rnn_crf', 'cnn', 'rnn', 'linear']
@@ -389,13 +394,13 @@ class BinaryDisorderClassifier(LightningModule):
         )
         parser.add_argument(
             "--cnn_bottleneck",
-            default=28,
+            default=64,
             type=int,
             help="Number of neurons in the CNN.",
         )
         parser.add_argument(
             "--cnn_kernel_n",
-            default=5,
+            default=4,
             type=int,
             help="Kernel width.",
         )
@@ -419,14 +424,14 @@ class BinaryDisorderClassifier(LightningModule):
         )
         parser.add_argument(
             "--nr_frozen_epochs",
-            default=1,
+            default=1000,
             type=int,
             help="Number of epochs we want to keep the encoder model frozen.",
         )
         # Data Args:
         parser.add_argument(
             "--max_length",
-            default=1536,
+            default=3000,
             type=int,
             help="Maximum sequence length.",
         )
@@ -448,7 +453,7 @@ class BinaryDisorderClassifier(LightningModule):
 
 # Taken from https://github.com/DagmarIlz/SETH/blob/main/SETH_1.py
 class SETH_CNN(nn.Module):
-    def __init__(self, n_classes, n_features, bottleneck_dim=28, kernel_n=5):
+    def __init__(self, n_classes, n_features, bottleneck_dim, kernel_n):
         super(SETH_CNN, self).__init__()
         self.n_classes = n_classes
         self.classifier = nn.Sequential(

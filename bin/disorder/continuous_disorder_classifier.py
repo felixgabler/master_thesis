@@ -293,7 +293,7 @@ class ContinuousDisorderClassifier(LightningModule):
         parser = parent_parser.add_argument_group("ContinuousDisorderClassifier")
         parser.add_argument(
             "--model_name",
-            default="Rostlab/prot_t5_xl_half_uniref50-enc",
+            default="esm2_t33_650M_UR50D",
             type=str,
             help="Language model to use as embedding encoder (ProtTrans or ESM)",
         )
@@ -325,13 +325,13 @@ class ContinuousDisorderClassifier(LightningModule):
         )
         parser.add_argument(
             "--cnn_bottleneck",
-            default=28,
+            default=32,
             type=int,
             help="Number of neurons in the CNN.",
         )
         parser.add_argument(
             "--cnn_kernel_n",
-            default=5,
+            default=4,
             type=int,
             help="Kernel width.",
         )
@@ -343,26 +343,26 @@ class ContinuousDisorderClassifier(LightningModule):
         )
         parser.add_argument(
             "--encoder_learning_rate",
-            default=1e-05,
+            default=3e-05,
             type=float,
             help="Encoder specific learning rate.",
         )
         parser.add_argument(
             "--learning_rate",
-            default=2e-04,
+            default=6e-04,
             type=float,
             help="Classification head learning rate.",
         )
         parser.add_argument(
             "--nr_frozen_epochs",
-            default=1,
+            default=1000,
             type=int,
             help="Number of epochs we want to keep the encoder model frozen.",
         )
         # Data Args:
         parser.add_argument(
             "--max_length",
-            default=1536,
+            default=3000,
             type=int,
             help="Maximum sequence length.",
         )
@@ -378,7 +378,7 @@ class ContinuousDisorderClassifier(LightningModule):
 
 # Taken from https://github.com/DagmarIlz/SETH/blob/main/SETH_1.py
 class SETH_CNN(nn.Module):
-    def __init__(self, n_classes, n_features, bottleneck_dim=28, kernel_n=5):
+    def __init__(self, n_classes, n_features, bottleneck_dim, kernel_n):
         super(SETH_CNN, self).__init__()
         self.n_classes = n_classes
         self.classifier = nn.Sequential(
