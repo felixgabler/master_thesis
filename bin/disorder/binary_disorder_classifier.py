@@ -291,7 +291,7 @@ class BinaryDisorderClassifier(LightningModule):
         if self.hparams.architecture == 'rnn_crf':
             return preds
         else:
-            return (preds > 0.5).int()
+            return (torch.sigmoid(preds) >= 0.5).int()
 
     def configure_optimizers(self):
         """ Sets different Learning rates for different parameter groups. """

@@ -108,9 +108,11 @@ def load_prediction_fasta(path, max_length=1536, skip_first=0):
                     "acc": line.strip(),
                     "seq": ""
                 }
-            else:
+            elif not line[0].isdigit():
                 item["seq"] += " ".join(list(re.sub(r"[UZOB]", "X", line.strip())))
 
+    if item is not None and len(item["seq"]) < max_length * 2:
+        items.append(item)
     return NLPDataset(items)
 
 

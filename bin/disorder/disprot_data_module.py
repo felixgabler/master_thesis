@@ -120,6 +120,7 @@ class DisprotDataModule(LightningDataModule):
         predict_dataset = load_prediction_fasta(self.hparams.predict_file,
                                                 self.hparams.max_length,
                                                 self.hparams.skip_first_lines)
+        self.dataset = predict_dataset
         return DataLoader(
             dataset=predict_dataset,
             batch_size=self.hparams.batch_size,

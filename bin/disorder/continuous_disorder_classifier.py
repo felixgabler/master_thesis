@@ -210,9 +210,13 @@ class ContinuousDisorderClassifier(LightningModule):
         # We cannot compare them directly because we first need to remove the padded areas
         mask = targets[0] == 999
         preds = preds[0][~mask].float()
+
         targets = targets[0][~mask]
+        binary_targets = (targets <= 8).int()
+        first = binary_targets[0]
+        only_one_label = all(elem == first for elem in binary_targets)
+
         self.metric_spearman(preds, targets)
-        auroc = self.metric_auroc((preds <= 8).float(), (targets <= 8).int())
         self.log(f'{prefix}_loss', outputs['loss'], batch_size=self.hparams.batch_size,
                  sync_dist=self.hparams.strategy is not None and 'deepspeed' in self.hparams.strategy)
         self.log(f'{prefix}_spearman', self.metric_spearman, batch_size=self.hparams.batch_size,
@@ -220,7 +224,7 @@ class ContinuousDisorderClassifier(LightningModule):
         # We also need to replace AUROC 0 with 1 because a perfect prediction should get perfect score
         # https://torchmetrics.readthedocs.io/en/stable/classification/auroc.html
         self.log(f'{prefix}_auroc',
-                 torch.tensor(1.) if ((preds <= 8).int() == (targets <= 8).int()).all() else auroc,
+                 torch.tensor(1.) if only_one_label else self.metric_auroc(-preds, binary_targets),
                  batch_size=self.hparams.batch_size,
                  sync_dist=self.hparams.strategy is not None and 'deepspeed' in self.hparams.strategy)
 
