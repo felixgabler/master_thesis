@@ -3,18 +3,15 @@ from argparse import ArgumentParser
 from pytorch_lightning import Trainer
 from transformers import logging
 
-from binary_disorder_classifier import BinaryDisorderClassifier
 from disprot_data_module import DisprotDataModule
+from ensemble_model import EnsembleDisorderPredictor
 
-
-# ##### ONLY RUN THIS ONCE THE MODEL IS DECIDED UPON #####
 
 def main(hparams):
     dm = DisprotDataModule(hparams)
-    model = BinaryDisorderClassifier.load_from_checkpoint(hparams.checkpoint, hparams_file=hparams.hparams_file)
-    model.save_hyperparameters(hparams)
+    model = EnsembleDisorderPredictor(hparams)
 
-    trainer = Trainer.from_argparse_args(hparams, profiler="simple")
+    trainer = Trainer.from_argparse_args(hparams)
 
     trainer.test(model, dm)
 
@@ -25,21 +22,9 @@ if __name__ == "__main__":
 
     parser = ArgumentParser(conflict_handler='resolve')
 
-    parser.add_argument(
-        "--checkpoint",
-        required=True,
-        type=str,
-        help="Path to the model checkpoint to predict with",
-    )
-    parser.add_argument(
-        "--hparams_file",
-        default=None,
-        type=str,
-        help="Path to the model parameters",
-    )
-
     # add all the available trainer options to argparse
     parser = Trainer.add_argparse_args(parser)
+    parser = EnsembleDisorderPredictor.add_model_specific_args(parser)
     parser = DisprotDataModule.add_data_specific_args(parser)
 
     args = parser.parse_args()

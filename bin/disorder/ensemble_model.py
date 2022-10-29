@@ -26,36 +26,19 @@ class EnsembleDisorderPredictor(BinaryDisorderClassifier):
         outs = [model(**inputs.to(model.device)) for model in self.models]
         return torch.median(torch.cat(outs), dim=0).values.view(1, -1)
 
-    def validation_step(self, batch: tuple, batch_nb: int, *args, **kwargs):
+    def _evaluate(self, batch: tuple):
         """ Similar to the training step but with the model in eval mode.
         Returns:
             - dictionary passed to the validation_end function.
         """
-        inputs, targets, padded_y = batch
+        inputs, targets, _ = batch
         targets = targets.to(self.device)
 
         preds = self.forward(inputs).to(self.device)
         return {'targets': targets, 'preds': preds}
-
-    def validation_step_end(self, outputs):
-        self._log_metrics(outputs, 'val')
-
-    def test_step(self, batch: tuple, batch_nb: int, *args, **kwargs):
-        """ Similar to the training step but with the model in eval mode.
-        Returns:
-            - dictionary passed to the validation_end function.
-        """
-        inputs, targets, padded_y = batch
-        targets = targets.to(self.device)
-
-        preds = self.forward(inputs).to(self.device)
-        return {'targets': targets, 'preds': preds}
-
-    def test_step_end(self, outputs):
-        self._log_metrics(outputs, 'test')
 
     def _log_metrics(self, outputs, prefix):
-        preds, targets = outputs['preds'], outputs['targets']
+        preds, targets = outputs['preds'][0], outputs['targets'][0]
         self.metric_acc(preds, targets)
         self.metric_bac(preds, targets)
         self.metric_f1(preds, targets)
