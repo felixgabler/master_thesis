@@ -163,7 +163,7 @@ class BinaryDisorderClassifier(LightningModule):
 
         elif self.hparams.architecture in ['cnn', 'linear']:
             if 'esm2' in self.hparams.model_name:
-                # TODO: replace end-of-word-padding with padding_idx to get real masking
+                # TODO: replace end-of-word-padding with padding_idx to get real masking (once ESM-2 released on HF)
                 padded_word_embeddings = self.LM(input_ids, repr_layers=[33])["representations"][33]
             else:
                 padded_word_embeddings = self.LM(input_ids, attention_mask)[0]
