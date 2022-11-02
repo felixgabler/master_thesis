@@ -48,9 +48,3 @@ class SpeedContinuousDisorderClassifier(ContinuousDisorderClassifier):
         self.log(f'{prefix}_auroc',
                  torch.tensor(1.) if ((preds <= 8).int() == (targets <= 8).int()).all() else auroc,
                  sync_dist=self.hparams.strategy is not None and 'deepspeed' in self.hparams.strategy)
-
-    def predict_step(self, batch, batch_idx: int, *args, **kwargs):
-        inputs, _ = batch
-        inputs = inputs.to(self.device)
-        preds = self.forward(**inputs)
-        return preds
