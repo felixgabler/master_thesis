@@ -1,2 +1,14 @@
 .idea
-/data
+.DS_Store
+__pycache__
+
+# Data sets
+/data/*
+!/data/CheZOD
+!/data/disprot
+/data/disprot/2022/sequences
+!/data/interesting_sequences
+# Unfortunately, too large to be included
+# !/data/uniprot
+# /data/uniprot/*
+# !/data/uniprot/human_predictions.out
